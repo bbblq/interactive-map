@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 互动地图</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="rich-text-editor.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <div class="login-icon">🔐</div>
+            <h1>管理后台登录</h1>
+            <p>请输入密码以访问管理后台</p>
+            <input type="password" id="passwordInput" placeholder="输入密码" class="login-input">
+            <button id="loginBtn" class="btn btn-primary">登录</button>
+            <div id="loginError" class="login-error"></div>
+            <a href="/" class="back-link">← 返回主页</a>
+        </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div id="adminPanel" style="display: none;">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">⚙️</div>
+                <h1>管理后台</h1>
+            </div>
+            <div class="header-actions">
+                <a href="/" class="btn btn-secondary">← 返回主页</a>
+                <button id="logoutBtn" class="btn btn-secondary">退出登录</button>
+            </div>
+        </header>
+
+        <!-- Main Container -->
+        <div class="admin-container">
+            <!-- Sidebar -->
+            <aside class="admin-sidebar">
+                <div class="admin-menu">
+                    <div class="menu-item active" data-tab="markers">
+                        <span class="menu-icon">📍</span>
+                        <span>标记管理</span>
+                    </div>
+                    <div class="menu-item" data-tab="icons">
+                        <span class="menu-icon">🎨</span>
+                        <span>图标类型</span>
+                    </div>
+                    <div class="menu-item" data-tab="map">
+                        <span class="menu-icon">🗺️</span>
+                        <span>地图管理</span>
+                    </div>
+                    <div class="menu-item" data-tab="settings">
+                        <span class="menu-icon">⚙️</span>
+                        <span>基本设置</span>
+                    </div>
+                    <div class="menu-item" data-tab="backup">
+                        <span class="menu-icon">💾</span>
+                        <span>备份管理</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="admin-content">
+                <!-- Markers Management Tab -->
+                <div id="markersTab" class="admin-tab active">
+                    <div class="tab-header">
+                        <h2>📍 标记管理</h2>
+                        <p>在地图上添加、编辑或删除标记</p>
+                    </div>
+
+                    <div class="markers-section">
+                        <div class="map-editor">
+                            <div class="editor-toolbar">
+                                <span class="hint" style="display: block;">
+                                    💡 在地图上右键点击可添加标记
+                                </span>
+                            </div>
+
+                            <div id="editorMapWrapper" class="editor-map-wrapper">
+                                <div id="editorMapImage" class="map-image">
+                                    <img id="editorMapImg" src="" alt="互动地图" style="display: none;">
+                                    <div id="editorMarkers"></div>
+                                </div>
+                                <div id="editorEmptyState" class="empty-state">
+                                    <div class="empty-state-icon">🗺️</div>
+                                    <h3>请先上传地图</h3>
+                                    <p>前往"地图管理"标签页上传办公室平面图</p>
+                                </div>
+                            </div>
+
+                            <div class="zoom-controls" id="editorZoomControls" style="display: none;">
+                                <button class="zoom-btn" id="editorZoomIn">+</button>
+                                <div class="zoom-level" id="editorZoomLevel">100%</div>
+                                <button class="zoom-btn" id="editorZoomOut">−</button>
+                                <button class="zoom-btn" id="editorResetZoom">⟲</button>
+                            </div>
+                        </div>
+
+                        <div class="markers-list">
+                            <h3>标记列表</h3>
+                            <div id="markersList" class="list-container">
+                                <!-- Markers will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Icon Types Management Tab -->
+                <div id="iconsTab" class="admin-tab">
+                    <div class="tab-header">
+                        <h2>🎨 图标类型管理</h2>
+                        <p>自定义标记图标类型和样式</p>
+                    </div>
+                    <div class="icons-management">
+                        <div class="icons-toolbar">
+                            <button class="btn btn-primary" id="addIconTypeBtn">
+                                ➕ 添加图标类型
+                            </button>
+                        </div>
+                        <div class="icons-grid" id="iconsGrid">
+                            <!-- Icon types will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map Management Tab -->
+                <div id="mapTab" class="admin-tab">
+                    <div class="tab-header">
+                        <h2>🗺️ 地图管理</h2>
+                        <p>上传或更换办公室平面图</p>
+                    </div>
+
+                    <div class="upload-section">
+                        <div class="current-map">
+                            <h3>当前地图</h3>
+                            <div id="currentMapPreview" class="map-preview">
+                                <div class="empty-preview">
+                                    <span>📷</span>
+                                    <p>暂无地图</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="upload-form">
+                            <h3>上传新地图</h3>
+                            <div class="file-upload">
+                                <input type="file" id="mapFileInput" accept="image/*" style="display: none;">
+                                <button class="btn btn-primary"
+                                    onclick="document.getElementById('mapFileInput').click()">
+                                    📁 选择图片
+                                </button>
+                                <div id="fileName" class="file-name"></div>
+                            </div>
+                            <button id="uploadMapBtn" class="btn btn-primary" style="display: none;">
+                                ⬆️ 上传地图
+                            </button>
+                            <div id="uploadProgress" class="upload-progress"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Basic Settings Tab -->
+                <div id="settingsTab" class="admin-tab">
+                    <div class="tab-header">
+                        <h2>⚙️ 基本设置</h2>
+                        <p>配置网站的基本信息</p>
+                    </div>
+
+                    <div class="settings-form">
+                        <form id="basicSettingsForm">
+                            <div class="form-group">
+                                <label>网站名称</label>
+                                <input type="text" id="siteTitle" placeholder="输入网站名称" class="form-input">
+                            </div>
+
+                            <div class="form-group">
+                                <label>网站 Logo</label>
+                                <div class="logo-upload-container">
+                                    <div class="current-logo">
+                                        <img id="siteLogoPreview" src="" alt="Logo预览"
+                                            style="max-height: 60px; display: none;">
+                                        <div id="noLogoPlaceholder"
+                                            style="width: 60px; height: 60px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999;">
+                                            Logo
+                                        </div>
+                                    </div>
+                                    <div class="logo-upload-actions">
+                                        <input type="file" id="logoFileInput" accept="image/*" style="display: none;">
+                                        <button type="button" class="btn btn-secondary"
+                                            onclick="document.getElementById('logoFileInput').click()">
+                                            更换 Logo
+                                        </button>
+                                        <div id="logoFileName" class="file-name"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary">保存设置</button>
+                        </form>
+
+                        <!-- Password Change Section -->
+                        <div class="password-change-section"
+                            style="margin-top: 40px; padding-top: 40px; border-top: 2px solid var(--border-color);">
+                            <h3 style="margin-bottom: 20px; font-size: 18px; color: var(--text-primary);">🔐 修改密码</h3>
+                            <form id="changePasswordForm">
+                                <div class="form-group">
+                                    <label>旧密码 *</label>
+                                    <input type="password" id="oldPassword" placeholder="输入当前密码" class="form-input"
+                                        required>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>新密码 *</label>
+                                    <input type="password" id="newPassword" placeholder="输入新密码(至少4位)" class="form-input"
+                                        required minlength="4">
+                                </div>
+
+                                <div class="form-group">
+                                    <label>确认新密码 *</label>
+                                    <input type="password" id="confirmPassword" placeholder="再次输入新密码" class="form-input"
+                                        required>
+                                </div>
+
+                                <div id="passwordChangeStatus" class="status-message" style="margin-top: 15px;"></div>
+
+                                <button type="submit" class="btn btn-primary">修改密码</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Backup Management Tab -->
+                <div id="backupTab" class="admin-tab">
+                    <div class="tab-header">
+                        <h2>💾 备份管理</h2>
+                        <p>导出和导入系统配置,保护您的数据</p>
+                    </div>
+
+                    <div class="backup-section">
+                        <!-- Backup Info -->
+                        <div class="info-card">
+                            <h3>📊 当前配置信息</h3>
+                            <div id="backupInfo" class="backup-info">
+                                <div class="info-item">
+                                    <span class="info-label">备份版本:</span>
+                                    <span class="info-value" id="backupVersion">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">标记数量:</span>
+                                    <span class="info-value" id="markerCount">-</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">地图状态:</span>
+                                    <span class="info-value" id="mapStatus">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Export Section -->
+                        <div class="backup-card">
+                            <div class="card-icon">📤</div>
+                            <h3>导出配置</h3>
+                            <p>将当前系统配置导出为 JSON 文件,包含所有标记、设置和地图数据</p>
+                            <button id="exportBackupBtn" class="btn btn-primary">
+                                📥 导出配置文件
+                            </button>
+                            <div id="exportStatus" class="status-message"></div>
+                        </div>
+
+                        <!-- Import Section -->
+                        <div class="backup-card">
+                            <div class="card-icon">📥</div>
+                            <h3>导入配置</h3>
+                            <p>从备份文件恢复系统配置。<strong>注意:导入前会自动备份当前配置</strong></p>
+                            <div class="file-upload">
+                                <input type="file" id="importBackupFile" accept=".json" style="display: none;">
+                                <button class="btn btn-secondary"
+                                    onclick="document.getElementById('importBackupFile').click()">
+                                    📁 选择备份文件
+                                </button>
+                                <div id="importFileName" class="file-name"></div>
+                            </div>
+                            <button id="importBackupBtn" class="btn btn-primary" style="display: none;">
+                                ⬆️ 导入并恢复
+                            </button>
+                            <div id="importStatus" class="status-message"></div>
+                        </div>
+
+                        <!-- Warning -->
+                        <div class="warning-box">
+                            <div class="warning-icon">⚠️</div>
+                            <div class="warning-content">
+                                <h4>重要提示</h4>
+                                <ul>
+                                    <li>导出的配置文件包含完整的系统数据,请妥善保管</li>
+                                    <li>导入配置会覆盖当前所有数据,操作前会自动创建备份</li>
+                                    <li>建议定期导出配置文件作为备份</li>
+                                    <li>配置文件支持版本兼容,可在未来版本中使用</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Marker Modal -->
+    <div id="markerFormModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="markerFormTitle">添加标记</h2>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button type="submit" form="markerForm" class="btn btn-primary btn-sm">保存</button>
+                    <button class="close-btn" id="closeMarkerForm">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <form id="markerForm">
+                    <input type="hidden" id="markerId">
+                    <input type="hidden" id="markerX">
+                    <input type="hidden" id="markerY">
+
+                    <!-- 标记类型选择 -->
+                    <div class="form-group">
+                        <label>标记类型 *</label>
+                        <div class="marker-type-selector">
+                            <label class="type-option">
+                                <input type="radio" name="markerType" value="text" checked>
+                                <span class="type-option-content">
+                                    <span class="type-option-icon">📝</span>
+                                    <span class="type-option-label">文字标记</span>
+                                </span>
+                            </label>
+                            <label class="type-option">
+                                <input type="radio" name="markerType" value="icon">
+                                <span class="type-option-content">
+                                    <span class="type-option-icon">📍</span>
+                                    <span class="type-option-label">图标标记</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 文字标记专属设置 -->
+                    <div id="textMarkerSettings" class="marker-settings">
+                        <div class="form-group">
+                            <label>文字内容 *</label>
+                            <input type="text" id="textContent" placeholder="输入文字内容" required>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>字体大小</label>
+                                <input type="number" id="fontSize" value="14" min="10" max="48">
+                            </div>
+                            <div class="form-group">
+                                <label>文字颜色</label>
+                                <input type="color" id="textColor" value="#333333">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>背景颜色</label>
+                                <input type="color" id="bgColor" value="#ffffff">
+                            </div>
+                            <div class="form-group">
+                                <label>边框颜色</label>
+                                <input type="color" id="borderColor" value="#cccccc">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>边框宽度 (px)</label>
+                            <input type="number" id="borderWidth" value="1" min="0" max="10">
+                        </div>
+                    </div>
+
+                    <!-- 图标标记专属设置 -->
+                    <div id="iconMarkerSettings" class="marker-settings" style="display: none;">
+                        <div class="form-group">
+                            <label>图标类型 *</label>
+                            <select id="iconCategory" required>
+                                <option value="person">👤 人员</option>
+                                <option value="printer">🖨️ 打印机</option>
+                                <option value="water">💧 饮水机</option>
+                                <option value="shredder">📄 碎纸机</option>
+                                <option value="meeting">🏢 会议室</option>
+                                <option value="other">📌 其他</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>图标预览</label>
+                            <div id="markerIconPreview"
+                                style="width: 50px; height: 50px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #f9f9f9; margin-top: 5px;">
+                                <span style="font-size: 12px; color: #999;">预览</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="showIcon" checked>
+                                <span>显示Emoji图标</span>
+                            </label>
+                            <small style="color: var(--text-secondary); font-size: 12px;">取消勾选后仅显示标签名称</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>标签名称 *</label>
+                            <input type="text" id="iconLabel" placeholder="例如：张三、打印机A" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="showIconLabel" checked>
+                                <span>显示标签名称</span>
+                            </label>
+                            <small style="color: var(--text-secondary); font-size: 12px;">勾选后在地图上显示标签名称</small>
+                        </div>
+                    </div>
+
+                    <!-- 文字标记的详情 -->
+                    <div id="textMarkerDetails" class="marker-settings">
+                        <div class="form-group">
+                            <label>详情</label>
+                            <div class="rich-text-toolbar">
+                                <button type="button" class="toolbar-btn" onclick="formatText('bold')"
+                                    title="粗体"><b>B</b></button>
+                                <button type="button" class="toolbar-btn" onclick="formatText('italic')"
+                                    title="斜体"><i>I</i></button>
+                                <button type="button" class="toolbar-btn" onclick="formatText('underline')"
+                                    title="下划线"><u>U</u></button>
+                                <span class="toolbar-divider"></span>
+                                <button type="button" class="toolbar-btn" onclick="insertLink()"
+                                    title="插入链接">🔗</button>
+                                <button type="button" class="toolbar-btn" onclick="formatText('removeFormat')"
+                                    title="清除格式">✕</button>
+                            </div>
+                            <div id="textDetails" class="rich-text-editor" contenteditable="true"
+                                data-placeholder="填写详细信息（可选）&#10;支持粗体、斜体、下划线和超链接"></div>
+                            <small style="color: var(--text-secondary); font-size: 12px;">支持文字格式和超链接</small>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="showDetails">
+                            <span>显示详情</span>
+                        </label>
+                        <small style="color: var(--text-secondary); font-size: 12px;">勾选后前端可点击查看详细信息</small>
+                    </div>
+
+                    <!-- 图标标记的额外信息 -->
+                    <div id="iconExtraInfo" class="marker-settings" style="display: none;">
+                        <div class="form-group">
+                            <label>描述</label>
+                            <textarea id="markerDescription" placeholder="详细描述（可选）" rows="3"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>部门</label>
+                            <input type="text" id="markerDepartment" placeholder="所属部门（可选）">
+                        </div>
+
+                        <div class="form-group">
+                            <label>电话</label>
+                            <input type="text" id="markerPhone" placeholder="联系电话（可选）">
+                        </div>
+
+                        <div class="form-group">
+                            <label>邮箱</label>
+                            <input type="email" id="markerEmail" placeholder="电子邮箱（可选）">
+                        </div>
+                    </div>
+
+                    <!-- Hidden field for marker scale -->
+                    <input type="hidden" id="markerScale" value="1.0">
+
+                    <div class="form-actions" style="display: none;">
+                        <button type="button" class="btn btn-secondary" id="cancelMarkerForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Icon Type Edit Modal -->
+    <div id="iconTypeModal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="iconTypeModalTitle">编辑图标类型</h3>
+                <button class="modal-close" id="closeIconTypeModal">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="iconTypeForm">
+                    <input type="hidden" id="iconTypeId">
+
+                    <div class="form-group">
+                        <label>类型名称 *</label>
+                        <input type="text" id="iconTypeName" placeholder="例如：打印机" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>图标颜色</label>
+                            <input type="color" id="iconTypeColor" value="#4a90e2">
+                        </div>
+                        <div class="form-group">
+                            <label>背景颜色</label>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <input type="color" id="iconTypeBgColor" value="#f8f9fa">
+                                <label class="checkbox-label" style="font-size: 13px;">
+                                    <input type="checkbox" id="iconTypeTransparent">
+                                    <span>透明</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>图标来源</label>
+                        <div class="radio-group" style="display: flex; gap: 15px; margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                <input type="radio" name="iconSource" value="preset" checked
+                                    onchange="toggleIconSource('preset')"> 预设形状
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+                                <input type="radio" name="iconSource" value="custom"
+                                    onchange="toggleIconSource('custom')"> 上传图片
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="presetSection">
+                        <div class="form-group">
+                            <label>选择图标形状</label>
+                            <div class="icon-shape-selector" id="iconShapeSelector">
+                                <!-- Populated by JS -->
+                            </div>
+                            <input type="hidden" id="iconTypeShape" name="iconTypeShape">
+                        </div>
+                    </div>
+
+                    <div id="uploadSection" style="display: none;">
+                        <div class="form-group">
+                            <label>上传图片 (PNG, JPG, SVG)</label>
+                            <input type="file" id="customIconFile" accept="image/*">
+                            <div id="customIconPreview"
+                                style="margin-top: 10px; width: 60px; height: 60px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #f9f9f9; overflow: hidden;">
+                                <span style="font-size: 12px; color: #999;">预览</span>
+                            </div>
+                            <input type="hidden" id="customIconUrl">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>图标预览</label>
+                        <div class="icon-preview" id="iconTypePreview">
+                            <!-- Preview will be shown here -->
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelIconTypeForm">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu">
+        <div class="context-menu-item" data-action="edit-marker" id="editMarkerMenuItem" style="display: none;">
+            <span class="context-menu-icon">✏️</span>
+            <span class="context-menu-label">修改当前标记</span>
+        </div>
+        <div class="context-menu-item" data-action="delete-marker" id="deleteMarkerMenuItem"
+            style="display: none; color: #ff4d4f;">
+            <span class="context-menu-icon">🗑️</span>
+            <span class="context-menu-label">删除当前标记</span>
+        </div>
+        <div class="context-menu-divider" id="editMarkerDivider" style="display: none;"></div>
+        <div class="context-menu-item" data-action="add-text">
+            <span class="context-menu-icon">📝</span>
+            <span class="context-menu-label">添加文字标记</span>
+        </div>
+        <div class="context-menu-item" data-action="add-marker">
+            <span class="context-menu-icon">📍</span>
+            <span class="context-menu-label">添加图标标记</span>
+        </div>
+    </div>
+
+    <script src="admin.js?v=3"></script>
+</body>
+
+</html>

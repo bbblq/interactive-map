@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>互动地图 - Interactive Map</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon" id="headerLogoContainer">
+        <img id="headerLogo" src="" alt="Logo" style="display: none; width: 100%; height: 100%; object-fit: contain;">
+        <span id="defaultLogoIcon">🗺️</span>
+      </div>
+      <h1 id="headerTitle">互动地图</h1>
+    </div>
+    <div class="search-container">
+      <input type="text" id="searchInput" class="search-input" placeholder="🔍 搜索标记、人员、部门...">
+      <div id="searchResults" class="search-results"></div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="container">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-toggle" id="sidebarToggle">→</div>
+      <div class="sidebar-content">
+        <h2>📍 标记分类</h2>
+        <div id="categories"></div>
+      </div>
+
+      <!-- Footer -->
+      <div class="sidebar-footer">
+        <a href="https://github.com/bbblq/interactive-map" target="_blank" rel="noopener noreferrer">
+          Powered by bbblq
+        </a>
+      </div>
+    </aside>
+
+    <!-- Map Container -->
+    <main class="map-container">
+      <div id="mapWrapper" class="map-wrapper">
+        <div id="mapImage" class="map-image">
+          <img id="mapImg" src="" alt="互动地图" style="display: none;">
+          <div id="markers"></div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state">
+        <div class="empty-state-icon">🗺️</div>
+        <h3>暂无地图</h3>
+        <p>请前往管理后台上传办公室平面图</p>
+        <a href="/admin" class="btn btn-primary">前往管理后台</a>
+      </div>
+
+      <!-- Zoom Controls -->
+      <div class="zoom-controls" id="zoomControls" style="display: none;">
+        <button class="zoom-btn" id="zoomIn">+</button>
+        <div class="zoom-level" id="zoomLevel">100%</div>
+        <button class="zoom-btn" id="zoomOut">−</button>
+        <button class="zoom-btn" id="resetZoom">⟲</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Marker Detail Modal -->
+  <div id="markerModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">标记详情</h2>
+        <button class="close-btn" id="closeModal">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Content will be populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=2"></script>
+</body>
+
+</html>
