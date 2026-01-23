@@ -1,6 +1,17 @@
 // Admin Panel - Authentication handled by backend
 let isAuthenticated = false;
 
+// XSS Protection
+function escapeHtml(text) {
+    if (!text) return text;
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 // Rich Text Editor Functions
 function formatText(command) {
     document.execCommand(command, false, null);
@@ -908,7 +919,7 @@ function renderEditorMarkers() {
                 white-space: nowrap;
             `;
             markerEl.innerHTML = `
-                <div class="text-label" style="${textStyle}">${marker.content || marker.label || ''}</div>
+                <div class="text-label" style="${textStyle}">${escapeHtml(marker.content || marker.label || '')}</div>
             `;
         } else {
             // 图标标记
@@ -958,7 +969,7 @@ function renderEditorMarkers() {
                             color: ${textColor};
                             text-shadow: none;
                         ">
-                            ${marker.label}
+                            ${escapeHtml(marker.label)}
                         </div>
                     ` : ''}
                 </div>
@@ -997,14 +1008,14 @@ function renderMarkersList() {
       <div class="marker-item-header">
         <div class="marker-item-title">
           <span class="marker-item-icon">${getMarkerIcon(marker.category)}</span>
-          <span>${marker.label}</span>
+          <span>${escapeHtml(marker.label)}</span>
         </div>
         <div class="marker-item-actions">
           <button class="icon-btn" onclick="editMarker('${marker.id}')" title="编辑">✏️</button>
           <button class="icon-btn delete" onclick="deleteMarker('${marker.id}')" title="删除">🗑️</button>
         </div>
       </div>
-      ${marker.description ? `<div class="marker-item-info">${marker.description}</div>` : ''}
+      ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
     </div>
   `).join('');
 }
@@ -1655,8 +1666,8 @@ function renderIconsGrid() {
             <div class="icon-display" style="background: ${type.color}15;">
                 ${iconContent}
             </div>
-            <div class="icon-name">${type.name}</div>
-            <div class="icon-id">${typeId}</div>
+            <div class="icon-name">${escapeHtml(type.name)}</div>
+            <div class="icon-id">${escapeHtml(typeId)}</div>
             <div class="icon-actions">
                 <button class="btn-icon" onclick="editIconType('${typeId}')">✏️ 编辑</button>
             </div>
@@ -2240,3 +2251,234 @@ if (document.readyState === 'loading') {
     setupSettingsListeners();
     init();
 }
+
+// ============================================
+// Sidebar Management Functions
+// ============================================
+
+let sidebarConfigData = [];
+
+// Load and render sidebar configuration
+async function loadSidebarConfig() {
+    try {
+        const response = await fetch('/api/icon-types');
+        const iconTypes = await response.json();
+
+        // Convert to array and sort by order
+        sidebarConfigData = Object.entries(iconTypes)
+            .map(([key, data]) => ({
+                key: key,
+                name: data.name,
+                icon: data.icon,
+                color: data.color,
+                imageUrl: data.imageUrl,
+                showInSidebar: data.showInSidebar !== false,
+                order: data.order || 999
+            }))
+            .sort((a, b) => a.order - b.order);
+
+        renderSidebarConfig();
+    } catch (error) {
+        console.error('Failed to load sidebar config:', error);
+        showNotification('加载侧边栏配置失败', 'error');
+    }
+}
+
+// Render sidebar configuration list
+function renderSidebarConfig() {
+    const container = document.getElementById('sidebarConfigList');
+    if (!container) return;
+
+    container.innerHTML = sidebarConfigData.map((item, index) => {
+        const iconHtml = item.imageUrl
+            ? `<img src="${item.imageUrl}" style="width: 24px; height: 24px; object-fit: contain;">`
+            : `<div style="color: ${item.color}; font-size: 20px;">${getIconSvg(item.icon)}</div>`;
+
+        return `
+            <div class="sidebar-config-item" draggable="true" data-key="${item.key}" data-index="${index}">
+                <div class="sidebar-config-drag-handle">☰</div>
+                <div class="sidebar-config-icon" style="background: ${item.color}20;">
+                    ${iconHtml}
+                </div>
+                <div class="sidebar-config-info">
+                    <div class="sidebar-config-name">${escapeHtml(item.name)}</div>
+                    <div class="sidebar-config-order">排序: ${item.order}</div>
+                </div>
+                <div class="sidebar-config-toggle">
+                    <label>
+                        <input type="checkbox" 
+                               ${item.showInSidebar ? 'checked' : ''} 
+                               onchange="toggleSidebarVisibility('${item.key}', this.checked)">
+                        <span>在侧边栏显示</span>
+                    </label>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Add drag and drop event listeners
+    setupDragAndDrop();
+}
+
+// Helper function to get icon SVG (simplified version)
+function getIconSvg(iconName) {
+    const icons = {
+        printer: '🖨️',
+        shredder: '📄',
+        tv: '📺',
+        screen: '🖥️',
+        server: '🗄️',
+        console: '⌨️',
+        icemaker: '🧊',
+        water: '💧',
+        coffee: '☕',
+        snacks: '🍿',
+        person: '👤',
+        meeting: '🏢',
+        other: '📌'
+    };
+    return icons[iconName] || '📌';
+}
+
+// Toggle sidebar visibility for an icon type
+function toggleSidebarVisibility(key, show) {
+    const item = sidebarConfigData.find(i => i.key === key);
+    if (item) {
+        item.showInSidebar = show;
+    }
+}
+
+// Setup drag and drop for reordering
+function setupDragAndDrop() {
+    const items = document.querySelectorAll('.sidebar-config-item');
+    let draggedItem = null;
+
+    items.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+            draggedItem = item;
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        item.addEventListener('dragend', (e) => {
+            item.classList.remove('dragging');
+        });
+
+        item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(e.currentTarget.parentElement, e.clientY);
+            const dragging = document.querySelector('.dragging');
+
+            if (afterElement == null) {
+                e.currentTarget.parentElement.appendChild(dragging);
+            } else {
+                e.currentTarget.parentElement.insertBefore(dragging, afterElement);
+            }
+        });
+
+        item.addEventListener('drop', (e) => {
+            e.preventDefault();
+            updateOrderAfterDrag();
+        });
+    });
+}
+
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.sidebar-config-item:not(.dragging)')];
+
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+// Update order after drag and drop
+function updateOrderAfterDrag() {
+    const items = document.querySelectorAll('.sidebar-config-item');
+    const newOrder = [];
+
+    items.forEach((item, index) => {
+        const key = item.getAttribute('data-key');
+        const configItem = sidebarConfigData.find(i => i.key === key);
+        if (configItem) {
+            configItem.order = index + 1;
+            newOrder.push(configItem);
+        }
+    });
+
+    sidebarConfigData = newOrder;
+    renderSidebarConfig();
+}
+
+// Save sidebar configuration
+async function saveSidebarConfig() {
+    try {
+        const btn = document.getElementById('saveSidebarConfigBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '保存中...';
+        }
+
+        // Update all icon types with new order and visibility
+        for (const item of sidebarConfigData) {
+            const updateData = {
+                name: item.name,
+                icon: item.icon,
+                color: item.color,
+                showInSidebar: item.showInSidebar,
+                order: item.order
+            };
+
+            if (item.imageUrl) {
+                updateData.imageUrl = item.imageUrl;
+            }
+            if (item.bgColor) {
+                updateData.bgColor = item.bgColor;
+            }
+
+            await fetch('/api/icon-types/' + item.key, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updateData)
+            });
+        }
+
+        showNotification('侧边栏配置已保存', 'success');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '💾 保存侧边栏配置';
+        }
+    } catch (error) {
+        console.error('Failed to save sidebar config:', error);
+        showNotification('保存失败', 'error');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '💾 保存侧边栏配置';
+        }
+    }
+}
+
+// Initialize sidebar management when icons tab is shown
+// Note: We use the existing init() function or event listeners instead of a second DOMContentLoaded if possible,
+// but adding a safe listener is fine.
+document.addEventListener('DOMContentLoaded', () => {
+    const saveSidebarBtn = document.getElementById('saveSidebarConfigBtn');
+    if (saveSidebarBtn) {
+        saveSidebarBtn.addEventListener('click', saveSidebarConfig);
+    }
+
+    // Load sidebar config when switching to icons tab
+    const iconsMenuItem = document.querySelector('[data-tab="icons"]');
+    if (iconsMenuItem) {
+        iconsMenuItem.addEventListener('click', () => {
+            setTimeout(loadSidebarConfig, 100);
+        });
+    }
+});
+

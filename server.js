@@ -371,6 +371,22 @@ app.post('/api/upload-icon', requireAuth, uploadIcon.single('iconFile'), async (
 // Markers APIs
 // ============================================
 
+// Validation Middleware
+const validateMarker = [
+  body('x').isNumeric().withMessage('X coordinate must be a number'),
+  body('y').isNumeric().withMessage('Y coordinate must be a number'),
+  body('label').optional().isString().trim().isLength({ max: 100 }),
+  body('type').optional().isIn(['icon', 'text']),
+  body('category').optional().isString().trim().isLength({ max: 50 }),
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    next();
+  }
+];
+
 // Get all markers
 app.get('/api/markers', async (req, res) => {
   try {
@@ -382,7 +398,7 @@ app.get('/api/markers', async (req, res) => {
 });
 
 // Add marker (requires auth)
-app.post('/api/markers', requireAuth, async (req, res) => {
+app.post('/api/markers', requireAuth, validateMarker, async (req, res) => {
   try {
     const markers = await readJSON(config.MARKERS_DATA_FILE, 'markers') || [];
     const newMarker = {
@@ -398,7 +414,7 @@ app.post('/api/markers', requireAuth, async (req, res) => {
 });
 
 // Update marker (requires auth)
-app.put('/api/markers/:id', requireAuth, async (req, res) => {
+app.put('/api/markers/:id', requireAuth, validateMarker, async (req, res) => {
   try {
     const markers = await readJSON(config.MARKERS_DATA_FILE, 'markers') || [];
     const index = markers.findIndex(m => m.id === req.params.id);
@@ -457,19 +473,19 @@ app.put('/api/categories', requireAuth, async (req, res) => {
 
 // Default icon types
 const DEFAULT_ICON_TYPES = {
-  printer: { name: '打印机', icon: 'printer', color: '#7b68ee' },
-  shredder: { name: '碎纸机', icon: 'shredder', color: '#ff6b6b' },
-  tv: { name: '电视', icon: 'tv', color: '#4a90e2' },
-  screen: { name: '大屏幕', icon: 'screen', color: '#00bcd4' },
-  server: { name: '机房', icon: 'server', color: '#9c27b0' },
-  console: { name: '控制台', icon: 'console', color: '#ff9800' },
-  icemaker: { name: '制冰机', icon: 'icemaker', color: '#03a9f4' },
-  water: { name: '饮水机', icon: 'water', color: '#00bcd4' },
-  coffee: { name: '咖啡机', icon: 'coffee', color: '#795548' },
-  snacks: { name: '零食台', icon: 'snacks', color: '#ffa726' },
-  person: { name: '人员', icon: 'person', color: '#4a90e2' },
-  meeting: { name: '会议室', icon: 'meeting', color: '#ff6b6b' },
-  other: { name: '其他', icon: 'other', color: '#9e9e9e' }
+  printer: { name: '打印机', icon: 'printer', color: '#7b68ee', showInSidebar: true, order: 1 },
+  shredder: { name: '碎纸机', icon: 'shredder', color: '#ff6b6b', showInSidebar: true, order: 2 },
+  tv: { name: '电视', icon: 'tv', color: '#4a90e2', showInSidebar: true, order: 3 },
+  screen: { name: '大屏幕', icon: 'screen', color: '#00bcd4', showInSidebar: true, order: 4 },
+  server: { name: '机房', icon: 'server', color: '#9c27b0', showInSidebar: true, order: 5 },
+  console: { name: '控制台', icon: 'console', color: '#ff9800', showInSidebar: true, order: 6 },
+  icemaker: { name: '制冰机', icon: 'icemaker', color: '#03a9f4', showInSidebar: true, order: 7 },
+  water: { name: '饮水机', icon: 'water', color: '#00bcd4', showInSidebar: true, order: 8 },
+  coffee: { name: '咖啡机', icon: 'coffee', color: '#795548', showInSidebar: true, order: 9 },
+  snacks: { name: '零食台', icon: 'snacks', color: '#ffa726', showInSidebar: true, order: 10 },
+  person: { name: '人员', icon: 'person', color: '#4a90e2', showInSidebar: true, order: 11 },
+  meeting: { name: '会议室', icon: 'meeting', color: '#ff6b6b', showInSidebar: true, order: 12 },
+  other: { name: '其他', icon: 'other', color: '#9e9e9e', showInSidebar: true, order: 13 }
 };
 
 // Get icon types

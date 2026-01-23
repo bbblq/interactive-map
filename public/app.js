@@ -4,6 +4,17 @@ let markers = [];
 let scale = 1;
 let translateX = 0;
 let translateY = 0;
+
+// XSS Protection
+function escapeHtml(text) {
+    if (!text) return text;
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 let isDragging = false;
 let startX = 0;
 let startY = 0;
@@ -143,7 +154,8 @@ function showMarkerDetail(marker) {
 
         let iconDisplay;
         if (category.imageUrl) {
-            iconDisplay = `<img src="${category.imageUrl}" style="width: 20px; height: 20px; vertical-align: middle;">`;
+            iconDisplay = `<img src="${category.imageUrl}" style="width: 20px; height: 20px; vertical-align: middle;">`; // imageUrl is trusted for now
+
         } else {
             const svg = SVG_ICONS[category.icon] || SVG_ICONS.other;
             iconDisplay = `<span style="color: ${category.color}; display: inline-flex; width: 20px; height: 20px; vertical-align: middle;">${svg}</span>`;
@@ -156,16 +168,16 @@ function showMarkerDetail(marker) {
         fields.push(`<p><strong>类型</strong> ${iconDisplay} ${category.name}</p>`);
 
         if (marker.description) {
-            fields.push(`<p><strong>描述</strong><br><span style="white-space: pre-wrap; line-height: 1.6;">${nl2br(marker.description)}</span></p>`);
+            fields.push(`<p><strong>描述</strong><br><span style="white-space: pre-wrap; line-height: 1.6;">${nl2br(escapeHtml(marker.description))}</span></p>`);
         }
         if (marker.department) {
-            fields.push(`<p><strong>部门</strong> ${marker.department}</p>`);
+            fields.push(`<p><strong>部门</strong> ${escapeHtml(marker.department)}</p>`);
         }
         if (marker.phone) {
-            fields.push(`<p><strong>电话</strong> ${marker.phone}</p>`);
+            fields.push(`<p><strong>电话</strong> ${escapeHtml(marker.phone)}</p>`);
         }
         if (marker.email) {
-            fields.push(`<p><strong>邮箱</strong> ${marker.email}</p>`);
+            fields.push(`<p><strong>邮箱</strong> ${escapeHtml(marker.email)}</p>`);
         }
 
         modalBody.innerHTML = fields.join('');
@@ -297,7 +309,7 @@ function renderMarkers() {
             markerEl.className = `marker marker-text-only ${marker.category || ''}${!showMarkers ? ' hidden' : ''}`;
             markerEl.style.left = leftPercent + '%';
             markerEl.style.top = topPercent + '%';
-            const content = marker.content || marker.label;
+            const content = escapeHtml(marker.content || marker.label);
             markerEl.innerHTML = `<div class="text-label">${content}</div>`;
         } else {
             // 图标标记
@@ -355,7 +367,7 @@ function renderMarkers() {
                             color: ${textColor};
                             text-shadow: none;
                         ">
-                            ${marker.label}
+                            ${escapeHtml(marker.label)}
                         </div>
                     ` : ''}
                 </div>
@@ -396,13 +408,23 @@ function renderCategories() {
         categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
     });
 
-    // Filter to only show categories with markers (count > 0)
-    const categoriesWithMarkers = Object.entries(iconTypes).filter(([key, cat]) => {
-        return (categoryCounts[key] || 0) > 0;
-    });
+    // Filter categories: only show those with markers AND showInSidebar = true
+    const categoriesWithMarkers = Object.entries(iconTypes)
+        .filter(([key, cat]) => {
+            const hasMarkers = (categoryCounts[key] || 0) > 0;
+            const showInSidebar = cat.showInSidebar !== false; // Default to true if not specified
+            return hasMarkers && showInSidebar;
+        })
+        // Sort by order field
+        .sort((a, b) => {
+            const orderA = a[1].order || 999;
+            const orderB = b[1].order || 999;
+            return orderA - orderB;
+        });
 
     categoriesContainer.innerHTML = categoriesWithMarkers.map(([key, cat]) => {
         const count = categoryCounts[key] || 0;
+        const isActive = selectedCategory === key;
         let iconHtml;
         if (cat.imageUrl) {
             iconHtml = `<img src="${cat.imageUrl}" style="width: 20px; height: 20px; object-fit: contain;">`;
@@ -413,7 +435,7 @@ function renderCategories() {
 
         return `
         <div class="category">
-          <div class="category-header" onclick="toggleCategory('${key}')">
+          <div class="category-header ${isActive ? 'active' : ''}" onclick="toggleCategory('${key}')" data-category="${key}">
             <div class="category-title">
               <span class="category-icon-wrapper">
                 <span class="category-icon" style="display: flex; align-items: center; justify-content: center;">${iconHtml}</span>
@@ -439,6 +461,17 @@ function renderCategories() {
 function toggleCategory(category) {
     selectedCategory = selectedCategory === category ? null : category;
     renderMarkers();
+
+    // Update visual state of all category headers
+    const allHeaders = document.querySelectorAll('.category-header');
+    allHeaders.forEach(header => {
+        const headerCategory = header.getAttribute('data-category');
+        if (headerCategory === selectedCategory) {
+            header.classList.add('active');
+        } else {
+            header.classList.remove('active');
+        }
+    });
 }
 
 // Toggle markers visibility
@@ -576,9 +609,11 @@ function handleSearch(e) {
 
 // Highlight matching text
 function highlightText(text, query) {
-    if (!query) return text;
+    if (!text) return '';
+    const escapedText = escapeHtml(text);
+    if (!query) return escapedText;
     const regex = new RegExp(`(${query})`, 'gi');
-    return text.replace(regex, '<strong style="color: var(--primary-color);">$1</strong>');
+    return escapedText.replace(regex, '<strong style="color: var(--primary-color);">$1</strong>');
 }
 
 // Select search result
