@@ -210,13 +210,11 @@ body {
 
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(1);
-    z-index: 1000;
+    filter: drop-shadow(0 0 0 transparent);
   }
 
   50% {
-    transform: translate(-50%, -50%) scale(1.3);
-    z-index: 1000;
+    filter: drop-shadow(0 0 20px rgba(74, 144, 226, 0.8)) drop-shadow(0 0 40px rgba(74, 144, 226, 0.5));
   }
 }
 
@@ -655,7 +653,6 @@ body {
 .map-image {
   position: absolute;
   transform-origin: 0 0;
-  transition: transform 0.1s ease-out;
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -672,10 +669,16 @@ body {
   left: 0;
   top: 0;
   cursor: pointer;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.3s ease;
   z-index: 10;
   will-change: transform;
   opacity: 1;
+  /* 防止缩放模糊 */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+  -webkit-font-smoothing: subpixel-antialiased;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 .marker:hover {

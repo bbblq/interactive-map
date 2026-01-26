@@ -83,6 +83,10 @@ let markerStartScale = 1.0;
 let iconTypes = {};
 let editingIconTypeId = null;
 
+// Copy-Paste State Management
+let copiedMarkerData = null;
+let hasCopiedData = false;
+
 // SVG Icons Library
 const SVG_ICONS = {
     printer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>`,
@@ -403,14 +407,75 @@ async function showAdminPanel() {
     adminPanel.style.display = 'block';
     isAuthenticated = true;
 
+    // 先加载 iconTypes，确保渲染列表时图标可用
+    await loadIconTypes();
     await loadMap();
     await loadMarkers();
     await loadSettings();
     setupTabNavigation();
     setupAdminListeners();
-    await loadIconTypes();
     setupBackupListeners();
     await loadBackupInfo();
+
+    // Setup keyboard shortcuts
+    setupKeyboardShortcuts();
+}
+
+// Setup keyboard shortcuts for copy-paste
+let lastMouseX = 0;
+let lastMouseY = 0;
+
+function setupKeyboardShortcuts() {
+    // Track mouse position on map
+    if (editorMapWrapper) {
+        editorMapWrapper.addEventListener('mousemove', (e) => {
+            const rect = editorMapWrapper.getBoundingClientRect();
+            lastMouseX = (e.clientX - rect.left - editorTranslateX) / editorScale;
+            lastMouseY = (e.clientY - rect.top - editorTranslateY) / editorScale;
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        // Check if Ctrl+C (Windows/Linux) or Cmd+C (Mac)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            // Only trigger if there's a selected marker and not in an input field
+            if (selectedMarkerId && !isInputFocused()) {
+                e.preventDefault();
+                copyMarker(selectedMarkerId);
+            }
+        }
+
+        // Check if Ctrl+V (Windows/Linux) or Cmd+V (Mac)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+            // Paste directly to map at mouse position (not in form)
+            if (hasCopiedData && !isInputFocused()) {
+                e.preventDefault();
+                // Use last mouse position, or map center if no mouse position recorded
+                const x = lastMouseX || (editorMapImg.naturalWidth / 2);
+                const y = lastMouseY || (editorMapImg.naturalHeight / 2);
+                pasteMarkerToMap(x, y);
+            }
+        }
+
+        // Check if Delete or Backspace
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            // Only trigger if there's a selected marker and not in an input field
+            if (selectedMarkerId && !isInputFocused()) {
+                e.preventDefault();
+                deleteMarker(selectedMarkerId);
+            }
+        }
+    });
+}
+
+// Check if an input field is currently focused
+function isInputFocused() {
+    const activeElement = document.activeElement;
+    return activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+    );
 }
 
 // Setup admin listeners
@@ -631,6 +696,17 @@ async function loadMarkers() {
         markers = await response.json();
         renderEditorMarkers();
         renderMarkersList();
+
+        // 如果当前有选中的标记，重新建立选择框（以同步位置和状态）
+        if (selectedMarkerId) {
+            const marker = markers.find(m => m.id === selectedMarkerId);
+            const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+            if (marker && markerEl) {
+                selectMarker(selectedMarkerId, null);
+            } else {
+                deselectMarker();
+            }
+        }
     } catch (error) {
         console.error('Failed to load markers:', error);
     }
@@ -657,6 +733,10 @@ function centerEditorMap() {
 function updateEditorTransform() {
     editorMapImage.style.transform = `translate(${editorTranslateX}px, ${editorTranslateY}px) scale(${editorScale})`;
     document.getElementById('editorZoomLevel').textContent = Math.round(editorScale * 100) + '%';
+
+    // Set CSS variable for scale inverse (helper for keeping handles constant size if needed)
+    editorMapWrapper.style.setProperty('--editor-scale', editorScale);
+
     // 标记现在是地图的子元素，会自动跟随地图transform，只需要更新缩放
     updateEditorMarkerScales();
 }
@@ -944,7 +1024,6 @@ function renderEditorMarkers() {
                     border-radius: 30px; 
                     padding: 4px; 
                     ${shadowStyle}
-                    transition: transform 0.2s;
                     cursor: pointer;
                     white-space: nowrap;
                 ">
@@ -994,6 +1073,15 @@ function renderEditorMarkers() {
     });
 
     updateEditorMarkerScales();
+
+    // 如果当前有选中的标记，恢复其列表中的选中状态
+    if (selectedMarkerId) {
+        const item = document.querySelector(`.marker-item[data-id="${selectedMarkerId}"]`);
+        if (item) {
+            item.classList.add('active');
+            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
 }
 
 // Render markers list
@@ -1004,20 +1092,46 @@ function renderMarkersList() {
     }
 
     markersList.innerHTML = markers.map(marker => `
-    <div class="marker-item">
+    <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}" 
+         data-id="${marker.id}" 
+         tabindex="0"
+         onclick="selectMarkerFromList('${marker.id}')"
+         onkeydown="handleMarkerListKeydown(event, '${marker.id}')">
       <div class="marker-item-header">
         <div class="marker-item-title">
           <span class="marker-item-icon">${getMarkerIcon(marker.category)}</span>
           <span>${escapeHtml(marker.label)}</span>
         </div>
         <div class="marker-item-actions">
-          <button class="icon-btn" onclick="editMarker('${marker.id}')" title="编辑">✏️</button>
-          <button class="icon-btn delete" onclick="deleteMarker('${marker.id}')" title="删除">🗑️</button>
+          <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
+          <button class="icon-btn" onclick="event.stopPropagation(); editMarker('${marker.id}')" title="编辑">✏️</button>
+          <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑️</button>
         </div>
       </div>
       ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
     </div>
   `).join('');
+}
+
+// 从列表选中标记
+function selectMarkerFromList(markerId) {
+    // 已经在地图上选中了，这里只需要调用 selectMarker
+    const markerEl = document.querySelector(`.marker[data-id="${markerId}"]`);
+    if (markerEl) {
+        selectMarker(markerId, null);
+    }
+}
+
+// 处理列表项键盘事件
+function handleMarkerListKeydown(event, markerId) {
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteMarker(markerId);
+    } else if (event.key === 'Enter') {
+        event.preventDefault();
+        editMarker(markerId);
+    }
 }
 
 // Get marker icon
@@ -1112,6 +1226,9 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
     }
 
     markerFormModal.classList.add('active');
+
+    // Update paste button visibility
+    updatePasteButtonVisibility();
 }
 
 // Close marker form modal
@@ -1185,6 +1302,8 @@ async function saveMarker(e) {
         }
 
         if (response.ok) {
+            const newMarker = await response.json();
+            selectedMarkerId = newMarker.id; // 选中新创建的标记
             await loadMarkers();
             closeMarkerFormModal();
         } else {
@@ -1220,6 +1339,9 @@ window.deleteMarker = async function (markerId) {
         });
 
         if (response.ok) {
+            if (markerId === selectedMarkerId) {
+                deselectMarker();
+            }
             await loadMarkers();
         } else {
             alert('删除失败，请重试');
@@ -1229,6 +1351,158 @@ window.deleteMarker = async function (markerId) {
         alert('删除失败: ' + error.message);
     }
 };
+
+// Copy marker (global function for onclick)
+window.copyMarker = function (markerId) {
+    const marker = markers.find(m => m.id === markerId);
+    if (!marker) {
+        showToast('标记不存在', 'error');
+        return;
+    }
+
+    // Deep copy marker data, excluding unique fields (id, x, y)
+    copiedMarkerData = {
+        type: marker.type,
+        category: marker.category,
+        label: marker.label,
+        content: marker.content,
+        fontSize: marker.fontSize,
+        textColor: marker.textColor,
+        bgColor: marker.bgColor,
+        borderColor: marker.borderColor,
+        borderWidth: marker.borderWidth,
+        showIcon: marker.showIcon,
+        showLabel: marker.showLabel,
+        showDetails: marker.showDetails,
+        description: marker.description,
+        department: marker.department,
+        phone: marker.phone,
+        email: marker.email,
+        details: marker.details,
+        scale: marker.scale || 1.0
+    };
+
+    hasCopiedData = true;
+    showToast('✓ 标记已复制');
+
+    // Update paste button visibility if form is open
+    updatePasteButtonVisibility();
+};
+
+// Paste marker data到表单 (global function for onclick)
+window.pasteMarkerData = function () {
+    if (!copiedMarkerData) {
+        showToast('没有可粘贴的数据', 'error');
+        return;
+    }
+
+    const markerType = copiedMarkerData.type || 'icon';
+
+    // Set marker type radio
+    const typeRadio = document.querySelector(`input[name="markerType"][value="${markerType}"]`);
+    if (typeRadio) {
+        typeRadio.checked = true;
+        handleMarkerTypeChange({ target: { value: markerType } });
+    }
+
+    if (markerType === 'text') {
+        // Paste text marker data
+        if (copiedMarkerData.content) document.getElementById('textContent').value = copiedMarkerData.content;
+        if (copiedMarkerData.fontSize) document.getElementById('fontSize').value = copiedMarkerData.fontSize;
+        if (copiedMarkerData.textColor) document.getElementById('textColor').value = copiedMarkerData.textColor;
+        if (copiedMarkerData.bgColor) document.getElementById('bgColor').value = copiedMarkerData.bgColor;
+        if (copiedMarkerData.borderColor) document.getElementById('borderColor').value = copiedMarkerData.borderColor;
+        if (copiedMarkerData.borderWidth) document.getElementById('borderWidth').value = copiedMarkerData.borderWidth;
+        if (copiedMarkerData.details) document.getElementById('textDetails').innerHTML = copiedMarkerData.details;
+    } else {
+        // Paste icon marker data
+        if (copiedMarkerData.category) {
+            document.getElementById('iconCategory').value = copiedMarkerData.category;
+            updateMarkerIconPreview();
+        }
+        if (copiedMarkerData.label) document.getElementById('iconLabel').value = copiedMarkerData.label;
+        if (copiedMarkerData.showIcon !== undefined) document.getElementById('showIcon').checked = copiedMarkerData.showIcon;
+        if (copiedMarkerData.showLabel !== undefined) document.getElementById('showIconLabel').checked = copiedMarkerData.showLabel;
+        if (copiedMarkerData.description) document.getElementById('markerDescription').value = copiedMarkerData.description;
+        if (copiedMarkerData.department) document.getElementById('markerDepartment').value = copiedMarkerData.department;
+        if (copiedMarkerData.phone) document.getElementById('markerPhone').value = copiedMarkerData.phone;
+        if (copiedMarkerData.email) document.getElementById('markerEmail').value = copiedMarkerData.email;
+    }
+
+    // Paste common fields
+    if (copiedMarkerData.showDetails !== undefined) document.getElementById('showDetails').checked = copiedMarkerData.showDetails;
+    if (copiedMarkerData.scale) document.getElementById('markerScale').value = copiedMarkerData.scale;
+
+    showToast('✓ 数据已粘贴');
+};
+
+// Paste marker directly to map at specified coordinates
+async function pasteMarkerToMap(x, y) {
+    if (!copiedMarkerData) {
+        showToast('没有可粘贴的数据', 'error');
+        return;
+    }
+
+    // Create new marker with copied data at new coordinates
+    const newMarkerData = {
+        ...copiedMarkerData,
+        x: x,
+        y: y
+    };
+
+    try {
+        const response = await fetch('/api/markers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newMarkerData)
+        });
+
+        if (response.ok) {
+            const newMarker = await response.json();
+            selectedMarkerId = newMarker.id; // 选中新粘贴的标记
+            await loadMarkers();
+            showToast('✓ 标记已粘贴到地图');
+        } else {
+            const errData = await response.json();
+            showToast(`粘贴失败: ${errData.error || '未知错误'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to paste marker:', error);
+        showToast('粘贴失败: ' + error.message, 'error');
+    }
+}
+
+// Update paste button visibility
+function updatePasteButtonVisibility() {
+    const pasteBtn = document.getElementById('pasteMarkerBtn');
+    if (pasteBtn) {
+        pasteBtn.style.display = hasCopiedData ? 'inline-flex' : 'none';
+    }
+}
+
+// Show toast notification
+function showToast(message, type = 'success') {
+    // Remove existing toast
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Show toast
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Remove toast after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
 
 // Context Menu Functions
 let contextMenuTargetMarkerId = null;
@@ -1254,22 +1528,44 @@ function showContextMenu(e) {
     const clickedElement = e.target;
     const markerElement = clickedElement.closest('.marker');
 
+    const copyMenuItem = document.getElementById('copyMarkerMenuItem');
     const editMenuItem = document.getElementById('editMarkerMenuItem');
     const deleteMenuItem = document.getElementById('deleteMarkerMenuItem');
     const editDivider = document.getElementById('editMarkerDivider');
+    const pasteMenuItem = document.getElementById('pasteMarkerMenuItem');
+    const pasteDivider = document.getElementById('pasteMarkerDivider');
 
     if (markerElement && markerElement.dataset.id) {
-        // 点击在标记上，显示编辑和删除选项
+        // 点击在标记上，显示复制、编辑和删除选项
         contextMenuTargetMarkerId = markerElement.dataset.id;
+
+        // 自动选中标记，以便Ctrl+C可以工作
+        selectedMarkerId = markerElement.dataset.id;
+
+        copyMenuItem.style.display = 'flex';
         editMenuItem.style.display = 'flex';
         if (deleteMenuItem) deleteMenuItem.style.display = 'flex';
         editDivider.style.display = 'block';
+
+        // 隐藏粘贴选项
+        pasteMenuItem.style.display = 'none';
+        pasteDivider.style.display = 'none';
     } else {
-        // 点击在空白处，隐藏编辑和删除选项
+        // 点击在空白处，隐藏复制、编辑和删除选项
         contextMenuTargetMarkerId = null;
+        copyMenuItem.style.display = 'none';
         editMenuItem.style.display = 'none';
         if (deleteMenuItem) deleteMenuItem.style.display = 'none';
         editDivider.style.display = 'none';
+
+        // 如果有复制的数据，显示粘贴选项
+        if (hasCopiedData) {
+            pasteMenuItem.style.display = 'flex';
+            pasteDivider.style.display = 'block';
+        } else {
+            pasteMenuItem.style.display = 'none';
+            pasteDivider.style.display = 'none';
+        }
     }
 
     // 显示菜单
@@ -1287,6 +1583,16 @@ function handleContextMenuClick(e) {
     hideContextMenu();
 
     switch (action) {
+        case 'copy-marker':
+            if (contextMenuTargetMarkerId) {
+                copyMarker(contextMenuTargetMarkerId);
+            }
+            break;
+        case 'paste-marker':
+            if (hasCopiedData) {
+                pasteMarkerToMap(contextMenuX, contextMenuY);
+            }
+            break;
         case 'add-text':
             openMarkerForm(null, contextMenuX, contextMenuY, 'text');
             break;
@@ -1352,20 +1658,30 @@ function selectMarker(markerId, event) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) return;
 
-    // 移除之前的选中状态
+    // 移除之前的地图选中状态
     document.querySelectorAll('.marker.selected').forEach(el => el.classList.remove('selected'));
 
-    // 添加选中状态
+    // 添加地图选中状态
     const markerEl = document.querySelector(`.marker[data-id="${markerId}"]`);
     if (markerEl) {
         markerEl.classList.add('selected');
     }
 
+    // 更新列表中的 active 状态并滚动
+    document.querySelectorAll('.marker-item').forEach(item => {
+        if (item.dataset.id === markerId) {
+            item.classList.add('active');
+            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            item.classList.remove('active');
+        }
+    });
+
     // 创建或更新选择框
     createSelectionBox(marker, markerEl);
 
     // 开始拖动标记
-    if (event) {
+    if (event && event.clientX !== undefined) {
         isDraggingMarker = true;
         dragStartX = event.clientX;
         dragStartY = event.clientY;
@@ -1396,27 +1712,37 @@ function createSelectionBox(marker, markerEl) {
     selectionBox = document.createElement('div');
     selectionBox.className = 'marker-selection-box active';
     selectionBox.style.position = 'absolute';
+    selectionBox.style.pointerEvents = 'none';
 
-    // 直接使用标记的位置和大小
-    // 标记已经使用百分比定位，我们需要获取其实际渲染的位置和大小
+    // 直接获取标记元素的屏幕位置和尺寸
     const markerRect = markerEl.getBoundingClientRect();
     const containerRect = editorMarkersContainer.getBoundingClientRect();
 
-    // 计算相对于容器的位置（需要除以缩放比例）
+    // 计算相对于容器的位置（转换为逻辑像素）
     const left = (markerRect.left - containerRect.left) / editorScale;
     const top = (markerRect.top - containerRect.top) / editorScale;
+    const width = markerRect.width / editorScale;
+    const height = markerRect.height / editorScale;
 
     selectionBox.style.left = left + 'px';
     selectionBox.style.top = top + 'px';
-    selectionBox.style.width = (markerRect.width / editorScale) + 'px';
-    selectionBox.style.height = (markerRect.height / editorScale) + 'px';
+    selectionBox.style.width = width + 'px';
+    selectionBox.style.height = height + 'px';
 
     // 创建8个调整手柄（四角+四边）
+    // 手柄大小根据标记大小动态调整，但有最小最大限制
+    const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
+
     const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
     handles.forEach(position => {
         const handle = document.createElement('div');
         handle.className = `resize-handle ${position}`;
         handle.dataset.position = position;
+        handle.style.pointerEvents = 'all';
+
+        // 动态手柄大小
+        handle.style.width = baseHandleSize + 'px';
+        handle.style.height = baseHandleSize + 'px';
 
         // 添加鼠标按下事件
         handle.addEventListener('mousedown', (e) => {
@@ -1428,7 +1754,66 @@ function createSelectionBox(marker, markerEl) {
     });
 
     editorMarkersContainer.appendChild(selectionBox);
+
+    // 更新手柄位置
+    updateHandlePositions(baseHandleSize);
 }
+
+// 更新手柄位置
+function updateHandlePositions(handleSize) {
+    if (!selectionBox) return;
+
+    const offset = -handleSize / 2;
+    const handles = selectionBox.querySelectorAll('.resize-handle');
+
+    handles.forEach(handle => {
+        const pos = handle.dataset.position;
+        handle.style.position = 'absolute';
+
+        // 角落手柄
+        if (pos === 'nw') {
+            handle.style.top = offset + 'px';
+            handle.style.left = offset + 'px';
+        } else if (pos === 'ne') {
+            handle.style.top = offset + 'px';
+            handle.style.right = offset + 'px';
+            handle.style.left = 'auto';
+        } else if (pos === 'sw') {
+            handle.style.bottom = offset + 'px';
+            handle.style.left = offset + 'px';
+            handle.style.top = 'auto';
+        } else if (pos === 'se') {
+            handle.style.bottom = offset + 'px';
+            handle.style.right = offset + 'px';
+            handle.style.top = 'auto';
+            handle.style.left = 'auto';
+        }
+        // 边缘手柄
+        else if (pos === 'n') {
+            handle.style.top = offset + 'px';
+            handle.style.left = '50%';
+            handle.style.transform = 'translateX(-50%)';
+        } else if (pos === 's') {
+            handle.style.bottom = offset + 'px';
+            handle.style.left = '50%';
+            handle.style.top = 'auto';
+            handle.style.transform = 'translateX(-50%)';
+        } else if (pos === 'w') {
+            handle.style.top = '50%';
+            handle.style.left = offset + 'px';
+            handle.style.transform = 'translateY(-50%)';
+        } else if (pos === 'e') {
+            handle.style.top = '50%';
+            handle.style.right = offset + 'px';
+            handle.style.left = 'auto';
+            handle.style.transform = 'translateY(-50%)';
+        }
+    });
+}
+
+
+// --- NEW LOGIC: Resize Logic Global State ---
+let resizeStartBounds = null;
 
 // Start resizing
 function startResize(handlePosition, event) {
@@ -1443,13 +1828,28 @@ function startResize(handlePosition, event) {
         markerStartY = marker.y;
         // 记录开始时的缩放值
         markerStartScale = marker.scale || 1.0;
+
+        // Capture visual bounds in Logical Map Pixels
+        const rect = selectionBox.getBoundingClientRect();
+        const containerRect = editorMarkersContainer.getBoundingClientRect();
+
+        resizeStartBounds = {
+            left: (rect.left - containerRect.left) / editorScale,
+            top: (rect.top - containerRect.top) / editorScale,
+            width: rect.width / editorScale,
+            height: rect.height / editorScale,
+            centerX: ((rect.left + rect.width / 2) - containerRect.left) / editorScale,
+            centerY: ((rect.top + rect.height / 2) - containerRect.top) / editorScale
+        };
     }
 }
 
 // Handle mouse move for dragging and resizing
+document.addEventListener('mousemove', handleEditorMouseMove); // Ensure listener is here if not already
+
 function handleEditorMouseMove(e) {
     if (isDraggingMarker && selectedMarkerId) {
-        // 拖动标记
+        // 拖动标记 (保持原有逻辑)
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
@@ -1466,71 +1866,151 @@ function handleEditorMouseMove(e) {
             const imgHeight = editorMapImg.naturalHeight || 1;
             markerEl.style.left = ((marker.x / imgWidth) * 100) + '%';
             markerEl.style.top = ((marker.y / imgHeight) * 100) + '%';
-        }
 
-        // 更新选择框位置
-        if (selectionBox && markerEl) {
-            const rect = markerEl.getBoundingClientRect();
-            const containerRect = editorMarkersContainer.getBoundingClientRect();
-            const left = (rect.left - containerRect.left) / editorScale;
-            const top = (rect.top - containerRect.top) / editorScale;
-            selectionBox.style.left = left + 'px';
-            selectionBox.style.top = top + 'px';
-        }
-    } else if (isResizing && selectedMarkerId) {
-        // 调整标记大小 - 累积式缩放
-        const marker = markers.find(m => m.id === selectedMarkerId);
-        if (!marker) return;
-
-        const deltaX = e.clientX - dragStartX;
-        const deltaY = e.clientY - dragStartY;
-
-        // 计算拖动距离（使用主方向）
-        let delta = 0;
-        if (resizeHandle.includes('e')) {
-            delta = deltaX;
-        } else if (resizeHandle.includes('w')) {
-            delta = -deltaX;
-        } else if (resizeHandle.includes('s')) {
-            delta = deltaY;
-        } else if (resizeHandle.includes('n')) {
-            delta = -deltaY;
-        }
-
-        // 从起始缩放值开始累积调整，灵敏度适中
-        const scaleDelta = delta / 200; // 每200px改变1倍
-        let newScale = markerStartScale + scaleDelta;
-
-        // 限制范围并四舍五入到0.1
-        newScale = Math.max(0.2, Math.min(5.0, newScale));
-        newScale = Math.round(newScale * 10) / 10;
-
-        marker.scale = newScale;
-
-        // 更新标记的视觉效果
-        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
-        if (markerEl) {
-            if (markerEl.classList.contains('marker-text-only')) {
-                markerEl.style.transform = `translate(-50%, -50%) scale(${newScale})`;
-            } else {
-                markerEl.style.transform = `translate(-50%, -100%) scale(${newScale})`;
-            }
-
-            // 更新选择框大小
+            // 更新选择框位置
             if (selectionBox) {
                 const rect = markerEl.getBoundingClientRect();
                 const containerRect = editorMarkersContainer.getBoundingClientRect();
                 const left = (rect.left - containerRect.left) / editorScale;
                 const top = (rect.top - containerRect.top) / editorScale;
-                selectionBox.style.width = (rect.width / editorScale) + 'px';
-                selectionBox.style.height = (rect.height / editorScale) + 'px';
                 selectionBox.style.left = left + 'px';
                 selectionBox.style.top = top + 'px';
-
-                // 显示当前缩放比例
-                updateScaleIndicator(newScale);
             }
         }
+    } else if (isResizing && selectedMarkerId && resizeStartBounds) {
+        // --- NEW LOGIC: Anchor-Fixed Resizing ---
+        // Resize around the specific anchor point (Center for Text, Bottom-Center for Icon)
+        // keeping the marker's geographic position (x,y) fixed.
+
+        const marker = markers.find(m => m.id === selectedMarkerId);
+        if (!marker) return;
+
+        // Current Mouse in Logical Pixels
+        const containerRect = editorMarkersContainer.getBoundingClientRect();
+        const mouseLogicX = (e.clientX - containerRect.left) / editorScale;
+        const mouseLogicY = (e.clientY - containerRect.top) / editorScale;
+
+        const isText = marker.type === 'text';
+
+        // Define Anchor Point (Fixed) and Reference Dimensions
+        const anchorX = markerStartX; // Use stored start X to be safe, though x shouldn't change
+        const anchorY = markerStartY;
+
+        const startWidth = resizeStartBounds.width;
+        const startHeight = resizeStartBounds.height;
+
+        // Calculate Scale Ratios based on Mouse Distance from Anchor
+        let ratioX = 0;
+        let ratioY = 0;
+        let validRatios = [];
+
+        // X-Axis (Width) Calculation - Same for Text and Icon (Centered Horizontally)
+        if (resizeHandle.includes('e') || resizeHandle.includes('w')) {
+            const dist = Math.abs(mouseLogicX - anchorX);
+            const startDist = startWidth / 2;
+            if (startDist > 0) {
+                ratioX = dist / startDist;
+                validRatios.push(ratioX);
+            }
+        }
+
+        // Y-Axis (Height) Calculation
+        if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
+            if (isText) {
+                // Text: Centered Vertically
+                const dist = Math.abs(mouseLogicY - anchorY);
+                const startDist = startHeight / 2;
+                if (startDist > 0) {
+                    ratioY = dist / startDist;
+                    validRatios.push(ratioY);
+                }
+            } else {
+                // Icon: Anchored at Bottom
+                if (resizeHandle.includes('n')) {
+                    // Dragging Top: Distance represents full height
+                    // Mouse should be ABOVE anchor (y < anchorY)
+                    const dist = anchorY - mouseLogicY;
+                    // Allow negative (flipping) or clamp? Let's assume clamp to min size handled later
+                    // But effectively we care about the magnitude of the new height intent
+                    // For intuitive feel from top handle:
+                    const safeDist = Math.max(1, dist);
+                    ratioY = safeDist / startHeight;
+                    validRatios.push(ratioY);
+                }
+                // Handle 's' (Bottom) for Icon is effectively dragging the anchor itself 
+                // Since we enforce fixed anchor, 's' handle resizing is ambiguous/ineffective for height 
+                // unless we allow growing downwards (which changes anchor visually). 
+                // We'll skip Y-contribution for 's' handle on Icons to prevent jumpiness.
+            }
+        }
+
+        // Determine Final Scale Ratio
+        // If multiple handles (corner), take the MAX change to allow 'filling' outwards
+        // or average? Max usually feels best ("stretchiest").
+        let finalRatio = 1.0;
+
+        if (validRatios.length > 0) {
+            finalRatio = Math.max(...validRatios);
+        } else {
+            // Fallback for cases like dragging 's' on Icon (only Y axis but ignored)
+            // Just keep scale or default to 1? 
+            // Better: if corner drag (se/sw) on icon, we have X ratio, so we use that.
+            // If pure 's' drag on icon, we do nothing (finalRatio 1 -> change nothing or stay startScale).
+            // Actually, we should probably compare against startScale 1.0 relative to operation
+            finalRatio = 1.0;
+
+            // If dragging 's' on icon, let's try to use X movement if significant? No.
+            // Just return if no valid ratio.
+            if (resizeHandle === 's' && !isText) return;
+        }
+
+        // Apply Ratio to Start Scale
+        let newScale = markerStartScale * finalRatio;
+        newScale = Math.max(0.1, newScale); // Minimum limit
+
+        // Update Marker Logic
+        marker.scale = newScale;
+        // marker.x and marker.y remain UNCHANGED (Fixed Anchor)
+
+        // Update Visuals
+        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        if (markerEl) {
+            // Position remains fixed at marker.x/y
+            // Just update transform
+            if (isText || markerEl.classList.contains('marker-text-only')) {
+                markerEl.style.transform = `translate(-50%, -50%) scale(${marker.scale})`;
+            } else {
+                markerEl.style.transform = `translate(-50%, -100%) scale(${marker.scale})`;
+            }
+
+            // Sync Selection Box - 使用屏幕坐标直接定位
+            if (selectionBox) {
+                const markerRect = markerEl.getBoundingClientRect();
+                const containerRect = editorMarkersContainer.getBoundingClientRect();
+
+                const left = (markerRect.left - containerRect.left) / editorScale;
+                const top = (markerRect.top - containerRect.top) / editorScale;
+                const width = markerRect.width / editorScale;
+                const height = markerRect.height / editorScale;
+
+                selectionBox.style.left = left + 'px';
+                selectionBox.style.top = top + 'px';
+                selectionBox.style.width = width + 'px';
+                selectionBox.style.height = height + 'px';
+                selectionBox.style.transform = 'none';
+
+                // 更新手柄大小和位置
+                const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
+                const handles = selectionBox.querySelectorAll('.resize-handle');
+                handles.forEach(handle => {
+                    handle.style.width = baseHandleSize + 'px';
+                    handle.style.height = baseHandleSize + 'px';
+                });
+                updateHandlePositions(baseHandleSize);
+            }
+        }
+
+        updateScaleIndicator(marker.scale);
     }
 }
 

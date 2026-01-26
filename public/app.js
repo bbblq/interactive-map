@@ -276,8 +276,8 @@ function updateMarkerScales() {
         if (markerEl.classList.contains('marker-text-only')) {
             markerEl.style.transform = `translate(-50%, -50%) scale(${markerScale})`;
         } else {
-            // 图标标记：由于去除了水滴框，现在居中对齐
-            markerEl.style.transform = `translate(-50%, -50%) scale(${markerScale})`;
+            // 图标标记：由于Anchor设定在底部中心，使用-100% Y轴偏移
+            markerEl.style.transform = `translate(-50%, -100%) scale(${markerScale})`;
         }
     });
 }
