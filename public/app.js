@@ -707,23 +707,79 @@ function endDrag() {
 // Touch support
 let touchStartX = 0;
 let touchStartY = 0;
+let initialPinchDistance = 0;
+let initialScale = 1;
 
 function handleTouchStart(e) {
     if (e.touches.length === 1) {
+        // Single finger drag
         const touch = e.touches[0];
         isDragging = true;
         touchStartX = touch.clientX - translateX;
         touchStartY = touch.clientY - translateY;
+    } else if (e.touches.length === 2) {
+        // Two fingers pinch
+        isDragging = false;
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        initialPinchDistance = getDistance(touch1, touch2);
+        initialScale = scale;
     }
 }
 
 function handleTouchMove(e) {
-    if (!isDragging || e.touches.length !== 1) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    translateX = touch.clientX - touchStartX;
-    translateY = touch.clientY - touchStartY;
-    updateTransform();
+    e.preventDefault(); // Default prevented for the map wrapper interaction
+
+    if (e.touches.length === 1 && isDragging) {
+        // Single finger drag
+        const touch = e.touches[0];
+        translateX = touch.clientX - touchStartX;
+        translateY = touch.clientY - touchStartY;
+        updateTransform();
+    } else if (e.touches.length === 2) {
+        // Two fingers pinch
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const currentDistance = getDistance(touch1, touch2);
+
+        if (initialPinchDistance > 0) {
+            const center = getCenter(touch1, touch2);
+            // Calculate new scale based on pinch ratio
+            const scaleFactor = currentDistance / initialPinchDistance;
+            
+            // Calculate zoom relative to the center of the pinch
+            // Current viewport position relative to map origin
+            const rect = mapWrapper.getBoundingClientRect();
+            const pinchCenterX = center.x - rect.left;
+            const pinchCenterY = center.y - rect.top;
+
+            // Apply new scale
+            const newScale = Math.max(0.1, Math.min(initialScale * scaleFactor, 5));
+            
+            // Adjust translation to keep pinch center fixed
+            if (newScale !== scale) {
+                translateX = pinchCenterX - (pinchCenterX - translateX) * (newScale / scale);
+                translateY = pinchCenterY - (pinchCenterY - translateY) * (newScale / scale);
+                scale = newScale;
+                updateTransform();
+            }
+        }
+    }
+}
+
+// Helper to calculate distance between two points
+function getDistance(touch1, touch2) {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Helper to calculate center between two points
+function getCenter(touch1, touch2) {
+    return {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2
+    };
 }
 
 // Initialize app

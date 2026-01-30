@@ -121,37 +121,41 @@
                         <h2>🎨 图标类型管理</h2>
                         <p>自定义标记图标类型和样式</p>
                     </div>
-                    <!-- Sidebar Management Section -->
-                    <div class="sidebar-management-section" style="margin-bottom: 30px;">
-                        <h3 style="font-size: 18px; margin-bottom: 15px; color: var(--text-primary);">
-                            📋 前台侧边栏管理
-                        </h3>
-                        <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">
-                            控制哪些图标类型显示在前台侧边栏，并调整显示顺序
-                        </p>
+                <div class="icons-layout-container">
+                    <!-- Sidebar Management Section (Left) -->
+                    <div class="sidebar-management-section">
+                        <div class="section-header">
+                            <h3>📋 前台侧边栏管理</h3>
+                            <p>拖拽调整显示顺序，控制侧边栏展示项</p>
+                        </div>
                         <div id="sidebarConfigList" class="sidebar-config-list">
                             <!-- Sidebar config items will be populated here -->
                         </div>
-                        <button class="btn btn-primary" id="saveSidebarConfigBtn" style="margin-top: 15px;">
-                            💾 保存侧边栏配置
-                        </button>
+                        <div class="section-footer">
+                            <button class="btn btn-primary btn-block" id="saveSidebarConfigBtn">
+                                💾 保存侧边栏配置
+                            </button>
+                        </div>
                     </div>
 
-                    <hr style="margin: 30px 0; border: none; border-top: 2px solid var(--border-color);">
-
-                    <div class="icons-management">
+                    <!-- Icon Types Management Section (Right) -->
+                    <div class="icons-management-section">
                         <div class="icons-toolbar">
-                            <h3 style="font-size: 18px; margin-bottom: 10px; color: var(--text-primary);">
-                                图标类型列表
-                            </h3>
+                            <div class="section-header">
+                                <h3>图标类型列表</h3>
+                                <p>管理所有可用的标记图标类型</p>
+                            </div>
                             <button class="btn btn-primary" id="addIconTypeBtn">
                                 ➕ 添加图标类型
                             </button>
                         </div>
-                        <div class="icons-grid" id="iconsGrid">
-                            <!-- Icon types will be populated here -->
+                        <div class="icons-grid-container">
+                            <div class="icons-grid" id="iconsGrid">
+                                <!-- Icon types will be populated here -->
+                            </div>
                         </div>
                     </div>
+                </div>
                 </div>
 
                 <!-- Map Management Tab -->
