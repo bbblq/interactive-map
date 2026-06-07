@@ -822,7 +822,6 @@ const EDITOR_MARKER_FONT = 13;
 function updateEditorMarkerScales() {
     if (!editorMapImg.naturalWidth) return;
     const sizeMul = globalMarkerSizeMultiplier || 1.0;
-    const bs = editorBaseScale || 1;
     const markerElements = editorMarkersContainer.querySelectorAll('.marker');
     for (let i = 0; i < markerElements.length; i++) {
         const markerEl = markerElements[i];
@@ -834,11 +833,6 @@ function updateEditorMarkerScales() {
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
 
-        // 目标屏幕像素尺寸: 与地图等比缩�?
-        const targetSize = isText
-            ? EDITOR_MARKER_BASE * markerScale * sizeMul
-            : EDITOR_MARKER_BASE * markerScale * sizeMul * (editorScale / bs);
-
         // 屏幕像素位置
         const screenX = editorTranslateX + marker.x * editorScale;
         const screenY = editorTranslateY + marker.y * editorScale;
@@ -846,21 +840,25 @@ function updateEditorMarkerScales() {
         markerEl.style.top = screenY + 'px';
 
         if (isText) {
-            // 文字标记: 跟图标标记完全同�? 边长 = targetSize, 文字 = 13 * targetSize / 32.
-            // 之前依赖 style.width/height 算字�? �?marker.scale 脱钩, 拖框时字体不�?
-            // 现在 box �?font 全部�?targetSize 派生, �?marker.scale / map zoom / 用户拖框
-            // 一起联�? 没有 36px 封顶, 想多大就多大.
-            const boxSize = targetSize;
-            const textWidth = boxSize * 1.5;
-            markerEl.style.width = textWidth + 'px';
-            markerEl.style.height = boxSize + 'px';
+            // 文字标记: 自由尺寸, 边长和字体跟随地图缩放
+            const baseW = marker.width || (48 * markerScale);
+            const baseH = marker.height || (32 * markerScale);
+            const w = baseW * editorScale * sizeMul;
+            const h = baseH * editorScale * sizeMul;
+            
+            markerEl.style.width = w + 'px';
+            markerEl.style.height = h + 'px';
+            
             const label = markerEl.querySelector('.text-label');
             if (label) {
-                const fontPx = Math.max(6, EDITOR_MARKER_FONT * boxSize / EDITOR_MARKER_BASE);
+                const fontPx = Math.max(4, (marker.fontSize || 14) * editorScale * sizeMul);
                 label.style.fontSize = fontPx + 'px';
             }
             markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
         } else {
+            // 图标标记: 保持等比缩放
+            const targetSize = EDITOR_MARKER_BASE * markerScale * sizeMul * editorScale;
+            
             const iconPart = markerEl.querySelector('.marker-icon-part');
             if (iconPart) {
                 iconPart.style.width = targetSize + 'px';
@@ -876,7 +874,7 @@ function updateEditorMarkerScales() {
     }
 }
 
-// 保留旧函数名以兼容其他调�?
+// 保留旧函数名以兼容其他调用
 function updateEditorMarkerPositions() {
     updateEditorMarkerScales();
 }
@@ -1006,17 +1004,16 @@ function createTemporaryMarker() {
 function updateTempMarkerPosition() {
     if (!tempMarker) return;
 
-    // 屏幕像素坐标 (�?editorMarkers 同一图层), 矢量清晰
+    // 屏幕像素坐标 (与 editorMarkers 同一图层), 矢量清晰
     const screenX = editorTranslateX + tempMarkerX * editorScale;
     const screenY = editorTranslateY + tempMarkerY * editorScale;
     tempMarker.style.left = screenX + 'px';
     tempMarker.style.top = screenY + 'px';
 
-    // 目标屏幕像素尺寸 (与其他标记一�?
+    // 目标屏幕像素尺寸
     const sizeMul = globalMarkerSizeMultiplier || 1.0;
-    const bs = editorBaseScale || 1;
-    const targetSize = EDITOR_MARKER_BASE * sizeMul * (editorScale / bs);
-    // temp marker �?icon part 尺寸
+    const targetSize = EDITOR_MARKER_BASE * sizeMul * editorScale;
+    // temp marker 的 icon part 尺寸
     const iconPart = tempMarker.querySelector('.marker-icon-part');
     if (iconPart) {
         iconPart.style.width = targetSize + 'px';
@@ -1437,6 +1434,7 @@ function closeMarkerFormModal() {
 
 // Save marker
 async function saveMarker(e) {
+
     e.preventDefault();
 
     const markerId = document.getElementById('markerId').value;
@@ -1455,18 +1453,20 @@ async function saveMarker(e) {
 
     let markerData;
 
+    const originalMarker = markerId ? markers.find(m => m.id === markerId) : null;
     if (markerType === 'text') {
         // 文字标记数据
         markerData = {
             ...baseData,
             content: document.getElementById('textContent').value,
             fontSize: parseInt(document.getElementById('fontSize').value),
-            // 6 �?hex + alpha 滑块 -> 8 �?hex (CSS 原生支持), 渲染不用再转 rgba
             textColor: getColorPickerValue('textColor', 'textColorAlpha'),
             bgColor: getColorPickerValue('bgColor', 'bgColorAlpha'),
             borderColor: getColorPickerValue('borderColor', 'borderColorAlpha'),
             borderWidth: parseInt(document.getElementById('borderWidth').value),
-            details: document.getElementById('textDetails').innerHTML
+            details: document.getElementById('textDetails').innerHTML,
+            width: originalMarker ? originalMarker.width : undefined,
+            height: originalMarker ? originalMarker.height : undefined
         };
     } else {
         // 图标标记数据
@@ -1583,7 +1583,10 @@ window.copyMarker = function (markerId) {
         email: marker.email,
         details: marker.details,
         scale: marker.scale || 1.0,
-        rotation: marker.rotation || 0
+        rotation: marker.rotation || 0,
+        zIndex: marker.zIndex || 0,
+        width: marker.width,
+        height: marker.height
     };
 
     hasCopiedData = true;
@@ -2102,32 +2105,47 @@ function startResize(handlePosition, event) {
     const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
     if (!marker || !markerEl) return;
 
-    const markerRect = markerEl.getBoundingClientRect();
-    const containerRect = editorMarkersContainer.getBoundingClientRect();
+    const rect = editorMapWrapper.getBoundingClientRect();
+    
+    // Get initial mouse position in map coordinates
+    const startMouseX = (event.clientX - rect.left - editorTranslateX) / editorScale;
+    const startMouseY = (event.clientY - rect.top - editorTranslateY) / editorScale;
 
-    // 锚点: 标记�?style.left/top 就是锚点屏幕坐标 (icon 底中�? 文字中心)
-    const anchorScreenX = parseFloat(markerEl.style.left) || (markerRect.left - containerRect.left);
-    const anchorScreenY = parseFloat(markerEl.style.top) || (markerRect.top - containerRect.top);
+    // Get initial marker size in map coordinates
+    const isText = marker.type === 'text';
+    let startWidth, startHeight;
+    if (isText) {
+        startWidth = marker.width || (48 * (marker.scale || 1.0));
+        startHeight = marker.height || (32 * (marker.scale || 1.0));
+    } else {
+        startWidth = markerEl.offsetWidth / (editorScale * (globalMarkerSizeMultiplier || 1.0));
+        startHeight = markerEl.offsetHeight / (editorScale * (globalMarkerSizeMultiplier || 1.0));
+    }
 
-    // 拖动开始时鼠标的屏幕坐�?(作为"原点", 后续�?delta �?
-    const startMouseX = event.clientX - containerRect.left;
-    const startMouseY = event.clientY - containerRect.top;
+    const startX = marker.x;
+    const startY = marker.y;
+    const rotation = marker.rotation || 0;
+    const theta = rotation * Math.PI / 180;
 
-    // 拖动开始时标记的当前屏幕像素尺�?
-    // �?offsetWidth/offsetHeight (未旋�?, 跟选中�?/ 拖动公式保持一�? 不受旋转 AABB 影响
-    const currentWidth = markerEl.offsetWidth;
-    const currentHeight = markerEl.offsetHeight;
+    // Calculate mouse position relative to marker center in map coordinates
+    const dx = startMouseX - startX;
+    const dy = startMouseY - startY;
 
-    markerStartScale = marker.scale || 1.0;
+    // Project mouse to local coordinate system of the marker
+    const startLocalX = dx * Math.cos(theta) + dy * Math.sin(theta);
+    const startLocalY = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
     resizeStartBounds = {
-        anchorScreenX,
-        anchorScreenY,
-        currentWidth,
-        currentHeight,
-        startMouseX,
-        startMouseY,
-        isText: marker.type === 'text'
+        startX,
+        startY,
+        startWidth,
+        startHeight,
+        startLocalX,
+        startLocalY,
+        rotation,
+        theta,
+        markerScale: marker.scale || 1.0,
+        isText
     };
 }
 
@@ -2202,134 +2220,108 @@ function handleEditorMouseMove(e) {
             }
         }
     } else if (isResizing && selectedMarkerId && resizeStartBounds) {
-        // 完全重写�?跟随鼠标"resize:
-        // 用户拖动把手, 标记对应边缘/角点要落在鼠标位�? 对侧锚点不动; 整体按比例缩�?
-        // 全部用屏幕像素算, 不再绕道源坐�? 公式直观且与 mark.scale 数据解�?
-
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
-        const containerRect = editorMarkersContainer.getBoundingClientRect();
-        const mouseScreenX = e.clientX - containerRect.left;
-        const mouseScreenY = e.clientY - containerRect.top;
+        const rect = editorMapWrapper.getBoundingClientRect();
+        
+        // Get current mouse position in map coordinates
+        const mouseX = (e.clientX - rect.left - editorTranslateX) / editorScale;
+        const mouseY = (e.clientY - rect.top - editorTranslateY) / editorScale;
 
         const {
-            anchorScreenX, anchorScreenY,
-            currentWidth, currentHeight,
-            startMouseX, startMouseY,
+            startX,
+            startY,
+            startWidth,
+            startHeight,
+            startLocalX,
+            startLocalY,
+            rotation,
+            theta,
+            markerScale,
             isText
         } = resizeStartBounds;
 
-        // 鼠标相对 mousedown 位置的位�?
-        const deltaX = mouseScreenX - startMouseX;
-        const deltaY = mouseScreenY - startMouseY;
+        // Current mouse position in original local coordinates
+        const dx = mouseX - startX;
+        const dy = mouseY - startY;
+        const currentLocalX = dx * Math.cos(theta) + dy * Math.sin(theta);
+        const currentLocalY = -dx * Math.sin(theta) + dy * Math.cos(theta);
 
-        // 1. 根据被拖动的手柄算出"跟随鼠标"的新尺寸 (用相对位�? 不是绝对位置)
-        // 之前用绝对位�?(newWidth = 2 * (mouseX - anchorX)) 出现:
-        //   1. 文字标记选框半宽本身就窄, 鼠标靠近锚点就算出负数被钳到 10px, 看起�?完全无法缩放"
-        //   2. 缩小�?10px �? 鼠标要在很特定位置才能算�?> 10 �?newWidth, 看起�?锁死"
-        // 改为相对位移: 鼠标�?mousedown 位置�?deltaX/deltaY, 直接�?delta 增减尺寸.
-        let newWidth = currentWidth;
-        let newHeight = currentHeight;
+        // Difference in local coordinates
+        const diffLocalX = currentLocalX - startLocalX;
+        const diffLocalY = currentLocalY - startLocalY;
 
-        // 'e' (右把�?: 把手初始�?anchorX + currentWidth/2, �?deltaX 后位置是原位�?+ deltaX
-        //   新右边缘 = 原右边缘 + deltaX
-        //   右边�?= anchorX + newWidth/2
-        //   newWidth = currentWidth + 2 * deltaX
+        let newWidth = startWidth;
+        let newHeight = startHeight;
+        let newLocalCenterX = 0;
+        let newLocalCenterY = 0;
+
+        // Calculate newWidth and newLocalCenterX
         if (resizeHandle.includes('e')) {
-            newWidth = currentWidth + 2 * deltaX;
+            newWidth = startWidth + diffLocalX;
+            newWidth = Math.max(10, newWidth); // minimum width on map
+            newLocalCenterX = -startWidth / 2 + newWidth / 2;
+        } else if (resizeHandle.includes('w')) {
+            newWidth = startWidth - diffLocalX;
+            newWidth = Math.max(10, newWidth);
+            newLocalCenterX = startWidth / 2 - newWidth / 2;
         }
-        // 'w' (左把�?: 把手初始�?anchorX - currentWidth/2, �?deltaX 后是原位�?+ deltaX
-        //   新左边缘 = 原左边缘 + deltaX
-        //   左边�?= anchorX - newWidth/2
-        //   -newWidth/2 = -currentWidth/2 + deltaX  =>  newWidth = currentWidth - 2 * deltaX
-        if (resizeHandle.includes('w')) {
-            newWidth = currentWidth - 2 * deltaX;
-        }
-        // 'n' (上把�?: 把手初始在标记上边缘, �?deltaY 后新上边�?= 原上边缘 + deltaY
-        if (resizeHandle.includes('n')) {
-            if (isText) {
-                // 文字锚点中心: 原上边缘 = anchorY - currentHeight/2
-                //   newTop = anchorY - currentHeight/2 + deltaY
-                //   newTop = anchorY - newHeight/2
-                //   newHeight = currentHeight - 2 * deltaY  (向上�? deltaY �? newHeight 增大)
-                newHeight = currentHeight - 2 * deltaY;
-            } else {
-                // icon 锚点底中�? 原上边缘 = anchorY - currentHeight
-                //   newTop = anchorY - currentHeight + deltaY
-                //   newTop = anchorY - newHeight
-                //   newHeight = currentHeight - deltaY
-                newHeight = currentHeight - deltaY;
-            }
-        }
-        // 's' (下把�?: 把手初始在标记下边缘, �?deltaY 后新下边�?= 原下边缘 + deltaY
+
+        // Calculate newHeight and newLocalCenterY
         if (resizeHandle.includes('s')) {
-            if (isText) {
-                // 文字: 原下边缘 = anchorY + currentHeight/2
-                //   newBottom = anchorY + currentHeight/2 + deltaY
-                //   newBottom = anchorY + newHeight/2
-                //   newHeight = currentHeight + 2 * deltaY
-                newHeight = currentHeight + 2 * deltaY;
+            newHeight = startHeight + diffLocalY;
+            newHeight = Math.max(10, newHeight); // minimum height on map
+            newLocalCenterY = -startHeight / 2 + newHeight / 2;
+        } else if (resizeHandle.includes('n')) {
+            newHeight = startHeight - diffLocalY;
+            newHeight = Math.max(10, newHeight);
+            newLocalCenterY = startHeight / 2 - newHeight / 2;
+        }
+
+        if (isText) {
+            // Text marker: free resizing of width and height in map coordinates
+            marker.width = newWidth;
+            marker.height = newHeight;
+            
+            // Calculate new global center on map (rotate projected local center changes back to map coordinates)
+            marker.x = startX + newLocalCenterX * Math.cos(theta) - newLocalCenterY * Math.sin(theta);
+            marker.y = startY + newLocalCenterX * Math.sin(theta) + newLocalCenterY * Math.cos(theta);
+            
+            // Sync form coordinate fields if open
+            const xField = document.getElementById('markerX');
+            const yField = document.getElementById('markerY');
+            const idField = document.getElementById('markerId');
+            if (xField && yField && idField && idField.value === selectedMarkerId) {
+                xField.value = Math.round(marker.x);
+                yField.value = Math.round(marker.y);
+            }
+        } else {
+            // Icon marker: proportional scaling based on mouse coordinate distance
+            let ratio = 1.0;
+            if (resizeHandle.includes('e') || resizeHandle.includes('w')) {
+                ratio = newWidth / startWidth;
+            } else if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
+                ratio = newHeight / startHeight;
             } else {
-                // icon: 下边缘就是锚�?(固定�?anchorY), �?'s' 改不�?Y
-                newHeight = currentHeight;
+                // Diagonal handles: use the maximum ratio
+                ratio = Math.max(newWidth / startWidth, newHeight / startHeight);
+            }
+            
+            marker.scale = Math.max(0.1, markerScale * ratio);
+            
+            // Sync form scale field if open
+            const scaleField = document.getElementById('markerScale');
+            const idField = document.getElementById('markerId');
+            if (scaleField && idField && idField.value === selectedMarkerId) {
+                scaleField.value = marker.scale.toFixed(2);
             }
         }
 
-        // 2. 下限钳到 4px (防拖到锚点另一侧算出负�?0, 标记彻底消失).
-        //    上限不设, 让用户能继续缩放; 失控�?(e.g. 鼠标飞出几万像素) 信任用户能拖�?
-        newWidth = Math.max(4, newWidth);
-        newHeight = Math.max(4, newHeight);
-
-        // 3. 由新尺寸反推 scale
-        //    ratioX/Y = newSize / currentSize
-        //    max 保证拖动方向"撑到"鼠标, 另一轴等�?(圆角/icon 不变�?
-        //    单轴把手 (e/w/n/s) 只有一�?ratio 有意�? 另一个是 1
-        //    角点把手两个 ratio 都有, max 决定缩放比例
-        const ratioX = newWidth / currentWidth;
-        const ratioY = newHeight / currentHeight;
-        const newScale = markerStartScale * Math.max(ratioX, ratioY);
-
-        // 4. 应用到标�?
-        marker.scale = newScale;
-
-        // 5. box �?font 全部交给 updateEditorMarkerScales �?(�?targetSize 派生),
-        //    不要�?resize handler 里手动写 style.width/height, 那样 box �?font 会脱�?
-        //    之前 icon/text 两套逻辑互相对不�? 现在统一�?targetSize 公式.
-        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        // Update display
         updateEditorMarkerScales();
-
-        // 6. 选择框跟�?- �?syncSelectionBoxToSelected 保持一�? AABB 中心定位 +
-        //    offsetWidth/Height 尺寸 + 一起旋�?
-        if (markerEl && selectionBox) {
-            const markerRect = markerEl.getBoundingClientRect();
-            const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
-            const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
-            const width = markerEl.offsetWidth;
-            const height = markerEl.offsetHeight;
-            const left = centerX - width / 2;
-            const top = centerY - height / 2;
-
-            const marker = markers.find(m => m.id === selectedMarkerId);
-            const rotation = (marker && marker.rotation) || 0;
-
-            selectionBox.style.left = left + 'px';
-            selectionBox.style.top = top + 'px';
-            selectionBox.style.width = width + 'px';
-            selectionBox.style.height = height + 'px';
-            selectionBox.style.transform = `rotate(${rotation}deg)`;
-            selectionBox.style.transformOrigin = 'center center';
-
-            const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
-            const handles = selectionBox.querySelectorAll('.resize-handle');
-            handles.forEach(handle => {
-                handle.style.width = baseHandleSize + 'px';
-                handle.style.height = baseHandleSize + 'px';
-            });
-            updateHandlePositions(baseHandleSize);
-        }
-
-        updateScaleIndicator(marker.scale);
+        syncSelectionBoxToSelected();
+        updateScaleIndicator(isText ? 1.0 : marker.scale);
     }
 }
 

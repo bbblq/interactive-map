@@ -316,9 +316,7 @@ const LABEL_PADDING_BASE = 10; // 文字左右内边距
 function updateMarkerTransforms() {
     if (!mapImg.naturalWidth) return;
     const sizeMul = globalMarkerSizeMultiplier || 1.0;
-    const bs = baseScale || 1;
 
-    // 用 [data-marker-id] 精确匹配, 避免筛选/搜索后 DOM 顺序与 markers 数组顺序不一致
     for (let i = 0; i < markers.length; i++) {
         const marker = markers[i];
         const markerEl = markersContainer.querySelector(`.marker[data-marker-id="${CSS.escape(marker.id)}"]`);
@@ -328,33 +326,32 @@ function updateMarkerTransforms() {
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
 
-        // 计算目标屏幕像素尺寸: 与地图等比缩放, sizeMul 作为全局倍率
-        const targetSize = isText
-            ? MARKER_BASE_SIZE * markerScale * sizeMul
-            : MARKER_BASE_SIZE * markerScale * sizeMul * (scale / bs);
-
-        // 屏幕像素位置: mapImage.transform = translate(tx, ty) scale(s)
-        // 源坐标 (mx, my) -> 屏幕 (tx + mx*s, ty + my*s)
+        // 屏幕像素位置
         const screenX = translateX + marker.x * scale;
         const screenY = translateY + marker.y * scale;
         markerEl.style.left = screenX + 'px';
         markerEl.style.top = screenY + 'px';
 
         if (isText) {
-            // 文字标记: 跟图标标记同构, 边长 = targetSize, 文字 = 13 * targetSize / 32.
-            // 跟编辑器 (admin.js) 行为一致, 不读 style.width/height, 全部从 targetSize 派生.
-            const boxSize = targetSize;
-            const textWidth = boxSize * 1.5;
-            markerEl.style.width = textWidth + 'px';
-            markerEl.style.height = boxSize + 'px';
+            // 文字标记: 自由尺寸, 边长和字体跟随地图缩放
+            const baseW = marker.width || (48 * markerScale);
+            const baseH = marker.height || (32 * markerScale);
+            const w = baseW * scale * sizeMul;
+            const h = baseH * scale * sizeMul;
+            
+            markerEl.style.width = w + 'px';
+            markerEl.style.height = h + 'px';
+            
             const label = markerEl.querySelector('.text-label');
             if (label) {
-                const fontPx = Math.max(6, MARKER_FONT_BASE * boxSize / MARKER_BASE_SIZE);
+                const fontPx = Math.max(4, (marker.fontSize || 14) * scale * sizeMul);
                 label.style.fontSize = fontPx + 'px';
             }
             markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
         } else {
-            // 图标标记: 标记尺寸由 capsule 内容决定, 动态更新内部 icon/label 尺寸
+            // 图标标记: 保持等比缩放
+            const targetSize = MARKER_BASE_SIZE * markerScale * sizeMul * scale;
+            
             const iconPart = markerEl.querySelector('.marker-icon-part');
             if (iconPart) {
                 iconPart.style.width = targetSize + 'px';
