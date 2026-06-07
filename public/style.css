@@ -657,13 +657,25 @@ body {
   -webkit-user-drag: none;
 }
 
-.map-image img {
-  display: block;
-  max-width: none;
+/* 标记层: 覆盖在地图之上, 独立屏幕像素坐标系 (不参与 mapImage 的 transform: scale).
+   这样标记的 SVG/文字按目标屏幕像素尺寸栅格化, 任意缩放级别下都保持矢量清晰. */
+.markers-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+  z-index: 10;
 }
 
-/* Markers */
+.markers-layer .marker {
+  pointer-events: all;
+}
+
+/* Markers - 现在标记在屏幕像素坐标, 用 CSS width/height 决定最终大小,
+   transform 仅用于锚点 (translate -50%/-100%) 和旋转, 不再 scale.
+   浏览器按真实屏幕尺寸栅格化 SVG/文字, 永远矢量清晰. */
 .marker {
   position: absolute;
   left: 0;
@@ -671,14 +683,34 @@ body {
   cursor: pointer;
   transition: opacity 0.3s ease;
   z-index: 10;
-  will-change: transform;
   opacity: 1;
-  /* 防止缩放模糊 */
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform-style: preserve-3d;
-  -webkit-font-smoothing: subpixel-antialiased;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* 不加 will-change, 不加 transform: translateZ(0), 让浏览器按当前 width/height 重新栅格化 */
+  /* 关键: min-width/height: 0, 否则 CSS 会把标记的最小尺寸钳到内容固有大小
+     (文字宽度 + padding), 文字标记就根本缩不下去. 文字溢出用 .text-label 的
+     overflow: hidden + text-overflow: ellipsis 处理. */
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* 标记内的 SVG 始终保持几何精度, 避免边缘模糊 */
+.marker svg {
+  shape-rendering: geometricPrecision;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 地图图片用 contrast 渲染, 矢量图(平面图)在缩放时更锐利 */
+.map-image img {
+  display: block;
+  max-width: none;
+  pointer-events: none;
   image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 .marker:hover {
@@ -708,6 +740,11 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border-color);
   transition: all 0.3s ease;
+  /* 配合 .marker 的 min-width: 0, 标记缩小到比文字还窄时, 文字用省略号截断 */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .marker-text-only:hover .text-label {

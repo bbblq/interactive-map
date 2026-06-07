@@ -49,9 +49,11 @@
     <main class="map-container">
       <div id="mapWrapper" class="map-wrapper">
         <div id="mapImage" class="map-image">
-          <img id="mapImg" src="" alt="互动地图" style="display: none;">
-          <div id="markers"></div>
+          <img id="mapImg" src="" alt="互动地图" decoding="async" fetchpriority="high" style="display: none;">
         </div>
+        <!-- 标记层: 位于 mapWrapper 内, mapImage 之外, 独立屏幕像素坐标系,
+             不受 mapImage.transform: scale() 影响, 保证 SVG/文字按屏幕像素栅格化, 矢量清晰 -->
+        <div id="markers" class="markers-layer"></div>
       </div>
 
       <!-- Empty State -->

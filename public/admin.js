@@ -38,6 +38,7 @@ let logoutBtn;
 let mapData = null;
 let markers = [];
 let editorScale = 1;
+let editorBaseScale = 1;
 let editorTranslateX = 0;
 let editorTranslateY = 0;
 let isDragging = false;
@@ -45,6 +46,8 @@ let startX = 0;
 let startY = 0;
 let isAddingMarker = false;
 let editingMarkerId = null;
+// 全局前台标记尺寸倍数 (来自 settings.markerSizeMultiplier)
+let globalMarkerSizeMultiplier = 1.0;
 
 // DOM elements - Editor
 const editorMapWrapper = document.getElementById('editorMapWrapper');
@@ -72,6 +75,9 @@ let selectedMarkerId = null;
 let selectionBox = null;
 let isResizing = false;
 let resizeHandle = null;
+let isRotating = false;
+let rotateStartAngle = 0;
+let markerStartRotation = 0;
 let isDraggingMarker = false;
 let dragStartX = 0;
 let dragStartY = 0;
@@ -556,10 +562,20 @@ function setupAdminListeners() {
     markerForm.addEventListener('submit', saveMarker);
     closeMarkerForm.addEventListener('click', closeMarkerFormModal);
     cancelMarkerForm.addEventListener('click', closeMarkerFormModal);
+    setupRotationFieldListener();
+    setupZIndexButtons();
 
-    markerFormModal.addEventListener('click', (e) => {
+    // 颜色选择器: 把 alpha 滑块和百分比标签绑在一起
+    setupColorPicker('textColor', 'textColorAlpha', 'textColorAlphaLabel');
+    setupColorPicker('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel');
+    setupColorPicker('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel');
+
+    // 弹窗占据焦点, 不再因点击 backdrop 关闭, 避免误操作丢失未保存内容.
+    // 如需关闭请使用右上角 X 按钮或底部取消/保存按钮.
+    // markerFormModal 上的 mousedown 阻止冒泡到 backdrop, 防止拖拽选择文本时误触
+    markerFormModal.addEventListener('mousedown', (e) => {
         if (e.target === markerFormModal) {
-            closeMarkerFormModal();
+            e.stopPropagation();
         }
     });
 
@@ -722,6 +738,7 @@ function centerEditorMap() {
     const scaleX = containerWidth / imgWidth;
     const scaleY = containerHeight / imgHeight;
     editorScale = Math.min(scaleX, scaleY) * 0.9;
+    editorBaseScale = editorScale;
 
     editorTranslateX = (containerWidth - imgWidth * editorScale) / 2;
     editorTranslateY = (containerHeight - imgHeight * editorScale) / 2;
@@ -729,36 +746,139 @@ function centerEditorMap() {
     updateEditorTransform();
 }
 
-// Update editor transform
-function updateEditorTransform() {
-    editorMapImage.style.transform = `translate(${editorTranslateX}px, ${editorTranslateY}px) scale(${editorScale})`;
-    document.getElementById('editorZoomLevel').textContent = Math.round(editorScale * 100) + '%';
-
-    // Set CSS variable for scale inverse (helper for keeping handles constant size if needed)
-    editorMapWrapper.style.setProperty('--editor-scale', editorScale);
-
-    // 标记现在是地图的子元素，会自动跟随地图transform，只需要更新缩放
-    updateEditorMarkerScales();
+// requestAnimationFrame 节流: 防止拖拽/滚轮高频触发时的布局抖动
+let editorTransformRafId = null;
+let editorTransformDirty = false;
+function scheduleEditorTransform() {
+    if (editorTransformRafId !== null) return;
+    editorTransformRafId = requestAnimationFrame(() => {
+        editorTransformRafId = null;
+        if (!editorTransformDirty) return;
+        editorTransformDirty = false;
+        editorMapImage.style.transform = `translate(${editorTranslateX}px, ${editorTranslateY}px) scale(${editorScale})`;
+        const zoomLabel = document.getElementById('editorZoomLevel');
+        if (zoomLabel) zoomLabel.textContent = Math.round(editorScale * 100) + '%';
+        editorMapWrapper.style.setProperty('--editor-scale', editorScale);
+        updateEditorMarkerScales();
+        // 标记位置/尺寸变了, 选中框必须同步跟随, 否则会有"滞后"
+        syncSelectionBoxToSelected();
+    });
 }
 
-// Update editor marker scales (位置由CSS自动处理，只更新缩放)
+// 同步选中框 (含 8 个调整手柄 + 1 个旋转把手) 到当前选中标记的屏幕位置
+// 位置用 AABB 中心 (旋转也是绕中心, AABB 中心 = 标记几何中心, 对 text/icon 都对):
+//   - 文字标记 transform=translate(-50%,-50%)    锚点=中心  -> AABB 中心 = 锚点 = 标记中心
+//   - 图标标记 transform=translate(-50%,-100%)   锚点=底中  -> AABB 中心 ≠ 锚点, 必须在中心
+// 尺寸用 offsetWidth/Height (未旋转), 不用 AABB 尺寸, 否则旋转后 AABB 比标记大一圈.
+function syncSelectionBoxToSelected() {
+    if (!selectionBox || !selectedMarkerId) return;
+    const markerEl = editorMarkersContainer.querySelector(`.marker[data-id="${CSS.escape(selectedMarkerId)}"]`);
+    if (!markerEl) return;
+
+    const markerRect = markerEl.getBoundingClientRect();
+    const containerRect = editorMarkersContainer.getBoundingClientRect();
+
+    // 位置: AABB 中心 (= 标记几何中心)
+    const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
+    const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
+
+    // 尺寸: offsetWidth/Height (未旋转)
+    const width = markerEl.offsetWidth;
+    const height = markerEl.offsetHeight;
+
+    const left = centerX - width / 2;
+    const top = centerY - height / 2;
+
+    // box 也跟着旋转, 让手柄出现在标记的视觉角落
+    const marker = markers.find(m => m.id === selectedMarkerId);
+    const rotation = (marker && marker.rotation) || 0;
+
+    selectionBox.style.left = left + 'px';
+    selectionBox.style.top = top + 'px';
+    selectionBox.style.width = width + 'px';
+    selectionBox.style.height = height + 'px';
+    selectionBox.style.transform = `rotate(${rotation}deg)`;
+    selectionBox.style.transformOrigin = 'center center';
+
+    // 调整手柄尺寸也按新尺寸重算
+    const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
+    selectionBox.querySelectorAll('.resize-handle').forEach(handle => {
+        handle.style.width = baseHandleSize + 'px';
+        handle.style.height = baseHandleSize + 'px';
+    });
+    updateHandlePositions(baseHandleSize);
+}
+
+function updateEditorTransform() {
+    editorTransformDirty = true;
+    scheduleEditorTransform();
+}
+
+// 标记按目标屏幕像素尺寸直接栅格化 (不走 transform: scale), 保证矢量清晰.
+// 与前台 app.js 行为一致:
+//   editorScale < 阈值 (= sizeMul) -> 反向缩放, 目标像素 = BASE * markerScale * sizeMul
+//   editorScale >= 阈值             -> 用 marker 自身 scale, 目标像素 = BASE * markerScale * editorScale
+const EDITOR_MARKER_BASE = 32;
+const EDITOR_MARKER_FONT = 13;
+
 function updateEditorMarkerScales() {
+    if (!editorMapImg.naturalWidth) return;
+    const sizeMul = globalMarkerSizeMultiplier || 1.0;
+    const threshold = sizeMul;
     const markerElements = editorMarkersContainer.querySelectorAll('.marker');
-    markerElements.forEach((markerEl) => {
+    for (let i = 0; i < markerElements.length; i++) {
+        const markerEl = markerElements[i];
         const markerId = markerEl.dataset.id;
         const marker = markers.find(m => m.id === markerId);
-        if (!marker) return;
+        if (!marker) continue;
 
         const markerScale = marker.scale || 1.0;
+        const rotation = marker.rotation || 0;
+        const isText = marker.type === 'text';
 
-        // 文字标记：使用固定scale
-        if (markerEl.classList.contains('marker-text-only')) {
-            markerEl.style.transform = `translate(-50%, -50%) scale(${markerScale})`;
+        // 目标屏幕像素尺寸
+        let targetSize;
+        if (editorScale < threshold) {
+            targetSize = EDITOR_MARKER_BASE * markerScale * sizeMul;
         } else {
-            // 图标标记：使用固定scale
-            markerEl.style.transform = `translate(-50%, -100%) scale(${markerScale})`;
+            targetSize = EDITOR_MARKER_BASE * markerScale * editorScale;
         }
-    });
+
+        // 屏幕像素位置
+        const screenX = editorTranslateX + marker.x * editorScale;
+        const screenY = editorTranslateY + marker.y * editorScale;
+        markerEl.style.left = screenX + 'px';
+        markerEl.style.top = screenY + 'px';
+
+        if (isText) {
+            // 文字标记: 跟图标标记完全同构, 边长 = targetSize, 文字 = 13 * targetSize / 32.
+            // 之前依赖 style.width/height 算字体, 跟 marker.scale 脱钩, 拖框时字体不动.
+            // 现在 box 和 font 全部从 targetSize 派生, 跟 marker.scale / map zoom / 用户拖框
+            // 一起联动, 没有 36px 封顶, 想多大就多大.
+            const boxSize = targetSize;
+            const textWidth = boxSize * 1.5;
+            markerEl.style.width = textWidth + 'px';
+            markerEl.style.height = boxSize + 'px';
+            const label = markerEl.querySelector('.text-label');
+            if (label) {
+                const fontPx = Math.max(6, EDITOR_MARKER_FONT * boxSize / EDITOR_MARKER_BASE);
+                label.style.fontSize = fontPx + 'px';
+            }
+            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+        } else {
+            const iconPart = markerEl.querySelector('.marker-icon-part');
+            if (iconPart) {
+                iconPart.style.width = targetSize + 'px';
+                iconPart.style.height = targetSize + 'px';
+            }
+            const labelPart = markerEl.querySelector('.marker-label-part');
+            if (labelPart) {
+                const fontPx = Math.max(10, EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE));
+                labelPart.style.fontSize = fontPx + 'px';
+            }
+            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg)`;
+        }
+    }
 }
 
 // 保留旧函数名以兼容其他调用
@@ -891,18 +1011,28 @@ function createTemporaryMarker() {
 function updateTempMarkerPosition() {
     if (!tempMarker) return;
 
-    // 使用百分比定位，与其他标记保持一致
-    const imgWidth = editorMapImg.naturalWidth || 1;
-    const imgHeight = editorMapImg.naturalHeight || 1;
-    const leftPercent = (tempMarkerX / imgWidth) * 100;
-    const topPercent = (tempMarkerY / imgHeight) * 100;
+    // 屏幕像素坐标 (与 editorMarkers 同一图层), 矢量清晰
+    const screenX = editorTranslateX + tempMarkerX * editorScale;
+    const screenY = editorTranslateY + tempMarkerY * editorScale;
+    tempMarker.style.left = screenX + 'px';
+    tempMarker.style.top = screenY + 'px';
 
-    tempMarker.style.left = leftPercent + '%';
-    tempMarker.style.top = topPercent + '%';
-
-    // 反向缩放以保持固定大小
-    const iconScale = Math.min(1 / editorScale, 1);
-    tempMarker.style.transform = `translate(-50%, -100%) scale(${iconScale})`;
+    // 目标屏幕像素尺寸 (与其他标记一致)
+    const sizeMul = globalMarkerSizeMultiplier || 1.0;
+    const threshold = sizeMul;
+    let targetSize;
+    if (editorScale < threshold) {
+        targetSize = EDITOR_MARKER_BASE * sizeMul;
+    } else {
+        targetSize = EDITOR_MARKER_BASE * editorScale;
+    }
+    // temp marker 的 icon part 尺寸
+    const iconPart = tempMarker.querySelector('.marker-icon-part');
+    if (iconPart) {
+        iconPart.style.width = targetSize + 'px';
+        iconPart.style.height = targetSize + 'px';
+    }
+    tempMarker.style.transform = `translate(-50%, -100%)`;
 }
 
 function startTempMarkerDrag(e) {
@@ -972,16 +1102,13 @@ function renderEditorMarkers() {
     markers.forEach((marker) => {
         const markerEl = document.createElement('div');
 
-        // 计算百分比位置（基于图片的自然尺寸）
-        const imgWidth = editorMapImg.naturalWidth || 1;
-        const imgHeight = editorMapImg.naturalHeight || 1;
-        const leftPercent = (marker.x / imgWidth) * 100;
-        const topPercent = (marker.y / imgHeight) * 100;
+        // 不在这里设 left/top/width/height, 全部由 updateEditorMarkerScales
+        // 在屏幕像素坐标下重新计算, 保证 SVG/文字按最终屏幕像素栅格化, 矢量清晰
 
         markerEl.dataset.id = marker.id;
-        markerEl.style.left = leftPercent + '%';
-        markerEl.style.top = topPercent + '%';
         markerEl.style.transform = 'translate(-50%, -50%)';
+        // 层级 (Z-Order): 大数字覆盖在上面, 解决大标记挡住小标记的问题
+        markerEl.style.zIndex = parseInt(marker.zIndex, 10) || 0;
 
         // 判断标记类型
         const markerType = marker.type || 'icon';
@@ -989,14 +1116,22 @@ function renderEditorMarkers() {
         if (markerType === 'text') {
             // 文字标记
             markerEl.className = 'marker marker-text-only';
+            // 关键: text-label 必须显式 width/height: 100% + flex 居中, 不然 text-label
+            // 收缩到内容固有大小, 跟 marker 不同步 -> 标记的 offsetWidth/Height 反映的是
+            // text-label 的实际渲染尺寸, 选择框就跑偏了.
             const textStyle = `
-                font-size: ${marker.fontSize || 14}px;
                 color: ${marker.textColor || '#333333'};
                 background: ${marker.bgColor || '#ffffff'};
                 border: ${marker.borderWidth || 1}px solid ${marker.borderColor || '#cccccc'};
                 padding: 8px 12px;
                 border-radius: 4px;
                 white-space: nowrap;
+                width: 100%;
+                height: 100%;
+                box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             `;
             markerEl.innerHTML = `
                 <div class="text-label" style="${textStyle}">${escapeHtml(marker.content || marker.label || '')}</div>
@@ -1018,33 +1153,30 @@ function renderEditorMarkers() {
 
             markerEl.innerHTML = `
                 <div class="marker-capsule" style="
-                    display: flex; 
-                    align-items: center; 
-                    ${bgStyle} 
-                    border-radius: 30px; 
-                    padding: 4px; 
+                    display: flex;
+                    align-items: center;
+                    ${bgStyle}
+                    border-radius: 30px;
+                    padding: 4px;
                     ${shadowStyle}
                     cursor: pointer;
                     white-space: nowrap;
                 ">
                     ${showIcon ? `
                     <div class="marker-icon-part" style="
-                        width: 32px; 
-                        height: 32px; 
-                        display: flex; 
-                        align-items: center; 
-                        justify-content: center; 
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
                         flex-shrink: 0;
                     ">
                         ${getMarkerIcon(marker.category)}
                     </div>` : ''}
-                    
+
                     ${showLabel && marker.label ? `
                         <div class="marker-label-part" style="
-                            padding-left: ${showIcon ? '4px' : '8px'}; 
-                            padding-right: 10px; 
-                            font-size: 13px; 
-                            font-weight: 600; 
+                            padding-left: ${showIcon ? '4px' : '8px'};
+                            padding-right: 10px;
+                            font-weight: 600;
                             color: ${textColor};
                             text-shadow: none;
                         ">
@@ -1091,16 +1223,21 @@ function renderMarkersList() {
         return;
     }
 
-    markersList.innerHTML = markers.map(marker => `
-    <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}" 
-         data-id="${marker.id}" 
+    markersList.innerHTML = markers.map(marker => {
+        // 文字标记用 content, 图标标记用 label, 都为空时退到一个占位符, 避免显示 "undefined"
+        const displayName = (marker.type === 'text')
+            ? (marker.content || marker.label || '(未命名文字)')
+            : (marker.label || '(未命名)');
+        return `
+    <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}"
+         data-id="${marker.id}"
          tabindex="0"
          onclick="selectMarkerFromList('${marker.id}')"
          onkeydown="handleMarkerListKeydown(event, '${marker.id}')">
       <div class="marker-item-header">
         <div class="marker-item-title">
           <span class="marker-item-icon">${getMarkerIcon(marker.category)}</span>
-          <span>${escapeHtml(marker.label)}</span>
+          <span>${escapeHtml(displayName)}</span>
         </div>
         <div class="marker-item-actions">
           <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
@@ -1110,7 +1247,8 @@ function renderMarkersList() {
       </div>
       ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
     </div>
-  `).join('');
+  `;
+    }).join('');
 }
 
 // 从列表选中标记
@@ -1150,6 +1288,63 @@ function getMarkerIcon(category) {
     return `<div style="color: ${color}; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">${svg}</div>`;
 }
 
+// 颜色辅助: 数据里用 8 位 hex (#RRGGBBAA) 同时存 RGB 和 alpha,
+// 浏览器 CSS 原生支持 8 位 hex, 渲染时不用再转 rgba. 表单的原生 color picker
+// 只支持 6 位 hex, 所以拆成 "6 位 hex + 0-100 alpha 滑块" 两部分, 用这两个函数互转.
+
+// 把 8 位 hex 拆成 6 位 hex + 0-100 的 alpha (整数百分比). 兼容 6/7 位历史数据.
+function splitHexAlpha(hex) {
+    if (!hex || typeof hex !== 'string') return { hex: '#000000', alpha: 100 };
+    if (hex.length === 9) {
+        const a = parseInt(hex.slice(7, 9), 16);
+        return { hex: hex.slice(0, 7), alpha: Math.round((a / 255) * 100) };
+    }
+    return { hex: hex, alpha: 100 };
+}
+
+// 把 6 位 hex + 0-100 alpha 合成 8 位 hex (#RRGGBBAA). alpha=100 时直接返回 6 位 + ff.
+function combineHexAlpha(hex, alphaPct) {
+    if (!hex || typeof hex !== 'string') return '#000000ff';
+    const h6 = (hex.length === 9) ? hex.slice(0, 7) : hex;
+    if (h6.length !== 7) return h6 + 'ff';
+    const a = Math.max(0, Math.min(100, Math.round(alphaPct || 100)));
+    if (a === 100) return h6 + 'ff';
+    const aHex = Math.round((a / 100) * 255).toString(16).padStart(2, '0');
+    return h6 + aHex;
+}
+
+// 把表单里的 alpha 滑块和百分比标签绑在一起. 滑块拖动时标签跟着更新.
+function setupColorPicker(colorId, alphaId, labelId) {
+    const alphaEl = document.getElementById(alphaId);
+    const labelEl = document.getElementById(labelId);
+    if (!alphaEl) return;
+
+    const updateLabel = () => {
+        if (labelEl) labelEl.textContent = alphaEl.value;
+    };
+    alphaEl.addEventListener('input', updateLabel);
+    updateLabel();
+}
+
+// 把 marker 的 8 位 hex 写入表单 (6 位 -> 原生 picker, alpha -> 滑块 + 标签).
+function setColorPickerValue(colorId, alphaId, labelId, hex) {
+    const { hex: h6, alpha } = splitHexAlpha(hex);
+    const colorEl = document.getElementById(colorId);
+    const alphaEl = document.getElementById(alphaId);
+    const labelEl = document.getElementById(labelId);
+    if (colorEl) colorEl.value = h6;
+    if (alphaEl) alphaEl.value = alpha;
+    if (labelEl) labelEl.textContent = alpha;
+}
+
+// 从表单读出 8 位 hex.
+function getColorPickerValue(colorId, alphaId) {
+    const colorEl = document.getElementById(colorId);
+    const alphaEl = document.getElementById(alphaId);
+    if (!colorEl || !alphaEl) return '#000000ff';
+    return combineHexAlpha(colorEl.value, parseInt(alphaEl.value, 10));
+}
+
 // Open marker form
 function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
     editingMarkerId = markerId;
@@ -1175,9 +1370,9 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
             // 文字标记
             document.getElementById('textContent').value = marker.content || marker.label || '';
             document.getElementById('fontSize').value = marker.fontSize || 14;
-            document.getElementById('textColor').value = marker.textColor || '#333333';
-            document.getElementById('bgColor').value = marker.bgColor || '#ffffff';
-            document.getElementById('borderColor').value = marker.borderColor || '#cccccc';
+            setColorPickerValue('textColor', 'textColorAlpha', 'textColorAlphaLabel', marker.textColor || '#333333');
+            setColorPickerValue('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel', marker.bgColor || '#ffffff');
+            setColorPickerValue('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel', marker.borderColor || '#cccccc');
             document.getElementById('borderWidth').value = marker.borderWidth || 1;
             document.getElementById('textDetails').innerHTML = marker.details || '';
         } else {
@@ -1191,10 +1386,14 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
             document.getElementById('markerDepartment').value = marker.department || '';
             document.getElementById('markerPhone').value = marker.phone || '';
             document.getElementById('markerEmail').value = marker.email || '';
+            // 详情(富文本)在图标/文字两种类型下共用 #textDetails 编辑器, 都需要回填
+            document.getElementById('textDetails').innerHTML = marker.details || '';
         }
 
         // 通用字段
         document.getElementById('showDetails').checked = marker.showDetails === true;
+        document.getElementById('markerRotation').value = Math.round(marker.rotation || 0);
+        document.getElementById('markerZIndex').value = parseInt(marker.zIndex, 10) || 0;
 
         // 触发类型切换以显示正确的表单部分
         handleMarkerTypeChange({ target: { value: markerType } });
@@ -1202,19 +1401,24 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
         // 添加新标记
         markerFormTitle.textContent = '添加标记';
         markerForm.reset();
+        // 显式清空富文本编辑器, markerForm.reset() 不会动 contenteditable 元素,
+        // 否则上一个标记的详情会被带入新标记
+        document.getElementById('textDetails').innerHTML = '';
         document.getElementById('markerId').value = '';
         document.getElementById('markerX').value = x;
         document.getElementById('markerY').value = y;
         document.getElementById('markerScale').value = 1.0;
+        document.getElementById('markerRotation').value = 0;
+        document.getElementById('markerZIndex').value = 0;
 
         // 设置默认类型
         document.querySelector(`input[name="markerType"][value="${defaultType}"]`).checked = true;
 
         // 设置默认值
         document.getElementById('fontSize').value = 14;
-        document.getElementById('textColor').value = '#333333';
-        document.getElementById('bgColor').value = '#ffffff';
-        document.getElementById('borderColor').value = '#cccccc';
+        setColorPickerValue('textColor', 'textColorAlpha', 'textColorAlphaLabel', '#333333');
+        setColorPickerValue('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel', '#ffffff');
+        setColorPickerValue('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel', '#cccccc');
         document.getElementById('borderWidth').value = 1;
         document.getElementById('showIcon').checked = true;
         document.getElementById('showIconLabel').checked = true;
@@ -1235,6 +1439,9 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
 function closeMarkerFormModal() {
     markerFormModal.classList.remove('active');
     markerForm.reset();
+    // 清空富文本编辑器, 防止关闭后残留内容影响下次打开
+    const textDetails = document.getElementById('textDetails');
+    if (textDetails) textDetails.innerHTML = '';
     editingMarkerId = null;
 }
 
@@ -1251,6 +1458,8 @@ async function saveMarker(e) {
         x: parseFloat(document.getElementById('markerX').value),
         y: parseFloat(document.getElementById('markerY').value),
         scale: parseFloat(document.getElementById('markerScale').value) || 1.0,
+        rotation: parseFloat(document.getElementById('markerRotation').value) || 0,
+        zIndex: parseInt(document.getElementById('markerZIndex').value, 10) || 0,
         showDetails: document.getElementById('showDetails').checked
     };
 
@@ -1262,9 +1471,10 @@ async function saveMarker(e) {
             ...baseData,
             content: document.getElementById('textContent').value,
             fontSize: parseInt(document.getElementById('fontSize').value),
-            textColor: document.getElementById('textColor').value,
-            bgColor: document.getElementById('bgColor').value,
-            borderColor: document.getElementById('borderColor').value,
+            // 6 位 hex + alpha 滑块 -> 8 位 hex (CSS 原生支持), 渲染不用再转 rgba
+            textColor: getColorPickerValue('textColor', 'textColorAlpha'),
+            bgColor: getColorPickerValue('bgColor', 'bgColorAlpha'),
+            borderColor: getColorPickerValue('borderColor', 'borderColorAlpha'),
             borderWidth: parseInt(document.getElementById('borderWidth').value),
             details: document.getElementById('textDetails').innerHTML
         };
@@ -1279,7 +1489,9 @@ async function saveMarker(e) {
             description: document.getElementById('markerDescription').value,
             department: document.getElementById('markerDepartment').value,
             phone: document.getElementById('markerPhone').value,
-            email: document.getElementById('markerEmail').value
+            email: document.getElementById('markerEmail').value,
+            // 详情(富文本)与文字标记共用 #textDetails 编辑器, 必须一起保存
+            details: document.getElementById('textDetails').innerHTML
         };
     }
 
@@ -1361,6 +1573,7 @@ window.copyMarker = function (markerId) {
     }
 
     // Deep copy marker data, excluding unique fields (id, x, y)
+    // 保留所有视觉/样式属性, 包括 rotation (旋转角度)
     copiedMarkerData = {
         type: marker.type,
         category: marker.category,
@@ -1379,7 +1592,8 @@ window.copyMarker = function (markerId) {
         phone: marker.phone,
         email: marker.email,
         details: marker.details,
-        scale: marker.scale || 1.0
+        scale: marker.scale || 1.0,
+        rotation: marker.rotation || 0
     };
 
     hasCopiedData = true;
@@ -1409,9 +1623,9 @@ window.pasteMarkerData = function () {
         // Paste text marker data
         if (copiedMarkerData.content) document.getElementById('textContent').value = copiedMarkerData.content;
         if (copiedMarkerData.fontSize) document.getElementById('fontSize').value = copiedMarkerData.fontSize;
-        if (copiedMarkerData.textColor) document.getElementById('textColor').value = copiedMarkerData.textColor;
-        if (copiedMarkerData.bgColor) document.getElementById('bgColor').value = copiedMarkerData.bgColor;
-        if (copiedMarkerData.borderColor) document.getElementById('borderColor').value = copiedMarkerData.borderColor;
+        if (copiedMarkerData.textColor) setColorPickerValue('textColor', 'textColorAlpha', 'textColorAlphaLabel', copiedMarkerData.textColor);
+        if (copiedMarkerData.bgColor) setColorPickerValue('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel', copiedMarkerData.bgColor);
+        if (copiedMarkerData.borderColor) setColorPickerValue('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel', copiedMarkerData.borderColor);
         if (copiedMarkerData.borderWidth) document.getElementById('borderWidth').value = copiedMarkerData.borderWidth;
         if (copiedMarkerData.details) document.getElementById('textDetails').innerHTML = copiedMarkerData.details;
     } else {
@@ -1427,11 +1641,17 @@ window.pasteMarkerData = function () {
         if (copiedMarkerData.department) document.getElementById('markerDepartment').value = copiedMarkerData.department;
         if (copiedMarkerData.phone) document.getElementById('markerPhone').value = copiedMarkerData.phone;
         if (copiedMarkerData.email) document.getElementById('markerEmail').value = copiedMarkerData.email;
+        // 粘贴详情(富文本), 与文字标记共用编辑器
+        if (copiedMarkerData.details) document.getElementById('textDetails').innerHTML = copiedMarkerData.details;
     }
 
     // Paste common fields
     if (copiedMarkerData.showDetails !== undefined) document.getElementById('showDetails').checked = copiedMarkerData.showDetails;
     if (copiedMarkerData.scale) document.getElementById('markerScale').value = copiedMarkerData.scale;
+    // 旋转角度: 不管 0 还是其他值都设, 否则新标记的旋转属性丢失
+    document.getElementById('markerRotation').value = Math.round(copiedMarkerData.rotation || 0);
+    // 层级: 同上, 0 也得设
+    document.getElementById('markerZIndex').value = parseInt(copiedMarkerData.zIndex, 10) || 0;
 
     showToast('✓ 数据已粘贴');
 };
@@ -1714,20 +1934,29 @@ function createSelectionBox(marker, markerEl) {
     selectionBox.style.position = 'absolute';
     selectionBox.style.pointerEvents = 'none';
 
-    // 直接获取标记元素的屏幕位置和尺寸
+    // 直接获取标记元素的屏幕位置和尺寸 (markers-layer 与 editorMarkers 同一屏幕像素坐标系)
+    // 位置用 AABB 中心, 尺寸用 offsetWidth/Height (未旋转), 跟 syncSelectionBoxToSelected 一致
     const markerRect = markerEl.getBoundingClientRect();
     const containerRect = editorMarkersContainer.getBoundingClientRect();
 
-    // 计算相对于容器的位置（转换为逻辑像素）
-    const left = (markerRect.left - containerRect.left) / editorScale;
-    const top = (markerRect.top - containerRect.top) / editorScale;
-    const width = markerRect.width / editorScale;
-    const height = markerRect.height / editorScale;
+    const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
+    const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
+    const width = markerEl.offsetWidth;
+    const height = markerEl.offsetHeight;
+    const left = centerX - width / 2;
+    const top = centerY - height / 2;
+
+    // 用函数参数 marker (createSelectionBox 接收的就是 markers[] 里的对象),
+    // 不要用 markerId - 这个函数签名里没有 markerId, 之前引用导致 find 返回 undefined,
+    // rotation 默认 0, 选择框第一次创建时没旋转, 调整过一次后才修正.
+    const rotation = (marker && marker.rotation) || 0;
 
     selectionBox.style.left = left + 'px';
     selectionBox.style.top = top + 'px';
     selectionBox.style.width = width + 'px';
     selectionBox.style.height = height + 'px';
+    selectionBox.style.transform = `rotate(${rotation}deg)`;
+    selectionBox.style.transformOrigin = 'center center';
 
     // 创建8个调整手柄（四角+四边）
     // 手柄大小根据标记大小动态调整，但有最小最大限制
@@ -1752,6 +1981,27 @@ function createSelectionBox(marker, markerEl) {
 
         selectionBox.appendChild(handle);
     });
+
+    // 旋转手柄: 绿色圆形, 位于选择框正上方
+    const rotateLine = document.createElement('div');
+    rotateLine.className = 'rotate-line';
+    rotateLine.style.height = Math.max(20, baseHandleSize * 0.8) + 'px';
+    selectionBox.appendChild(rotateLine);
+
+    const rotateHandle = document.createElement('div');
+    rotateHandle.className = 'rotate-handle';
+    rotateHandle.dataset.role = 'rotate';
+    rotateHandle.style.pointerEvents = 'all';
+    rotateHandle.style.width = Math.max(20, baseHandleSize) + 'px';
+    rotateHandle.style.height = Math.max(20, baseHandleSize) + 'px';
+    rotateHandle.style.fontSize = Math.max(12, baseHandleSize * 0.6) + 'px';
+    rotateHandle.textContent = '↻';
+    rotateHandle.title = '拖动旋转标记';
+    rotateHandle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        startRotate(e);
+    });
+    selectionBox.appendChild(rotateHandle);
 
     editorMarkersContainer.appendChild(selectionBox);
 
@@ -1809,47 +2059,127 @@ function updateHandlePositions(handleSize) {
             handle.style.transform = 'translateY(-50%)';
         }
     });
+
+    // 旋转手柄位置: 在选择框正上方, 距离 = 连线高度 + 手柄半径
+    const rotateHandle = selectionBox.querySelector('.rotate-handle');
+    const rotateLine = selectionBox.querySelector('.rotate-line');
+    if (rotateHandle) {
+        const lineHeight = rotateLine ? parseFloat(rotateLine.style.height) || 20 : 20;
+        const handleOffset = -(lineHeight + handleSize / 2);
+        rotateHandle.style.position = 'absolute';
+        rotateHandle.style.top = handleOffset + 'px';
+        rotateHandle.style.left = '50%';
+        rotateHandle.style.right = 'auto';
+        rotateHandle.style.bottom = 'auto';
+        rotateHandle.style.transform = 'translateX(-50%)';
+    }
 }
 
 
 // --- NEW LOGIC: Resize Logic Global State ---
 let resizeStartBounds = null;
 
-// Start resizing
+// Start rotating
+function startRotate(event) {
+    const marker = markers.find(m => m.id === selectedMarkerId);
+    if (!marker) return;
+
+    const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+    if (!markerEl) return;
+
+    // 标记视觉中心 (考虑 editorScale 和 translate 偏移)
+    const markerRect = markerEl.getBoundingClientRect();
+    const containerRect = editorMapWrapper.getBoundingClientRect();
+    const centerX = (markerRect.left + markerRect.width / 2 - containerRect.left) / editorScale;
+    const centerY = (markerRect.top + markerRect.height / 2 - containerRect.top) / editorScale;
+    const mouseX = (event.clientX - containerRect.left) / editorScale;
+    const mouseY = (event.clientY - containerRect.top) / editorScale;
+
+    rotateStartAngle = Math.atan2(mouseY - centerY, mouseX - centerX) * 180 / Math.PI;
+    markerStartRotation = marker.rotation || 0;
+    isRotating = true;
+
+    event.preventDefault();
+}
+
+// Start resizing - 记录初始状态 (屏幕像素, 改为记录 mousedown 时的鼠标位置,
+// 后续按"鼠标相对位移"算新尺寸, 解决绝对位置算法下"缩到最小就被锁死"的问题)
 function startResize(handlePosition, event) {
     isResizing = true;
     resizeHandle = handlePosition;
-    dragStartX = event.clientX;
-    dragStartY = event.clientY;
 
     const marker = markers.find(m => m.id === selectedMarkerId);
-    if (marker) {
-        markerStartX = marker.x;
-        markerStartY = marker.y;
-        // 记录开始时的缩放值
-        markerStartScale = marker.scale || 1.0;
+    const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+    if (!marker || !markerEl) return;
 
-        // Capture visual bounds in Logical Map Pixels
-        const rect = selectionBox.getBoundingClientRect();
-        const containerRect = editorMarkersContainer.getBoundingClientRect();
+    const markerRect = markerEl.getBoundingClientRect();
+    const containerRect = editorMarkersContainer.getBoundingClientRect();
 
-        resizeStartBounds = {
-            left: (rect.left - containerRect.left) / editorScale,
-            top: (rect.top - containerRect.top) / editorScale,
-            width: rect.width / editorScale,
-            height: rect.height / editorScale,
-            centerX: ((rect.left + rect.width / 2) - containerRect.left) / editorScale,
-            centerY: ((rect.top + rect.height / 2) - containerRect.top) / editorScale
-        };
-    }
+    // 锚点: 标记的 style.left/top 就是锚点屏幕坐标 (icon 底中心, 文字中心)
+    const anchorScreenX = parseFloat(markerEl.style.left) || (markerRect.left - containerRect.left);
+    const anchorScreenY = parseFloat(markerEl.style.top) || (markerRect.top - containerRect.top);
+
+    // 拖动开始时鼠标的屏幕坐标 (作为"原点", 后续按 delta 算)
+    const startMouseX = event.clientX - containerRect.left;
+    const startMouseY = event.clientY - containerRect.top;
+
+    // 拖动开始时标记的当前屏幕像素尺寸
+    // 用 offsetWidth/offsetHeight (未旋转), 跟选中框 / 拖动公式保持一致, 不受旋转 AABB 影响
+    const currentWidth = markerEl.offsetWidth;
+    const currentHeight = markerEl.offsetHeight;
+
+    markerStartScale = marker.scale || 1.0;
+
+    resizeStartBounds = {
+        anchorScreenX,
+        anchorScreenY,
+        currentWidth,
+        currentHeight,
+        startMouseX,
+        startMouseY,
+        isText: marker.type === 'text'
+    };
 }
 
 // Handle mouse move for dragging and resizing
 document.addEventListener('mousemove', handleEditorMouseMove); // Ensure listener is here if not already
 
 function handleEditorMouseMove(e) {
+    if (isRotating && selectedMarkerId) {
+        // 旋转标记: 计算鼠标相对标记中心的角度, 减去起始角度得到增量
+        const marker = markers.find(m => m.id === selectedMarkerId);
+        if (!marker) return;
+
+        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        if (!markerEl) return;
+
+        const markerRect = markerEl.getBoundingClientRect();
+        const containerRect = editorMapWrapper.getBoundingClientRect();
+        const centerX = (markerRect.left + markerRect.width / 2 - containerRect.left) / editorScale;
+        const centerY = (markerRect.top + markerRect.height / 2 - containerRect.top) / editorScale;
+        const mouseX = (e.clientX - containerRect.left) / editorScale;
+        const mouseY = (e.clientY - containerRect.top) / editorScale;
+
+        const currentAngle = Math.atan2(mouseY - centerY, mouseX - centerX) * 180 / Math.PI;
+        const delta = currentAngle - rotateStartAngle;
+        let newRotation = (markerStartRotation + delta) % 360;
+        if (newRotation > 180) newRotation -= 360;
+        if (newRotation < -180) newRotation += 360;
+
+        marker.rotation = newRotation;
+        updateEditorMarkerScales();
+
+        // 同步表单旋转字段 (仅当该标记的编辑表单已打开)
+        const rotField = document.getElementById('markerRotation');
+        const idField = document.getElementById('markerId');
+        if (rotField && idField && idField.value === selectedMarkerId) {
+            rotField.value = Math.round(newRotation);
+        }
+        return;
+    }
+
     if (isDraggingMarker && selectedMarkerId) {
-        // 拖动标记 (保持原有逻辑)
+        // 拖动标记: markers-layer 屏幕像素坐标, 与 updateEditorMarkerScales 保持一致
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
@@ -1859,155 +2189,154 @@ function handleEditorMouseMove(e) {
         marker.x = markerStartX + deltaX;
         marker.y = markerStartY + deltaY;
 
-        // 更新标记位置
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
         if (markerEl) {
-            const imgWidth = editorMapImg.naturalWidth || 1;
-            const imgHeight = editorMapImg.naturalHeight || 1;
-            markerEl.style.left = ((marker.x / imgWidth) * 100) + '%';
-            markerEl.style.top = ((marker.y / imgHeight) * 100) + '%';
+            // 源坐标 -> 屏幕像素: editorMapImage.transform = translate(tx, ty) scale(s)
+            // 标记层 (markers-layer) 跟 mapWrapper 同坐标, 直接用编辑器 transform
+            const screenX = editorTranslateX + marker.x * editorScale;
+            const screenY = editorTranslateY + marker.y * editorScale;
+            markerEl.style.left = screenX + 'px';
+            markerEl.style.top = screenY + 'px';
 
-            // 更新选择框位置
+            // 选中框跟随 - 跟 syncSelectionBoxToSelected 一致: AABB 中心定位
+            // containerRect 在外面算一次, 拖动期间 markers-layer 不动
             if (selectionBox) {
-                const rect = markerEl.getBoundingClientRect();
                 const containerRect = editorMarkersContainer.getBoundingClientRect();
-                const left = (rect.left - containerRect.left) / editorScale;
-                const top = (rect.top - containerRect.top) / editorScale;
-                selectionBox.style.left = left + 'px';
-                selectionBox.style.top = top + 'px';
+                const markerRect = markerEl.getBoundingClientRect();
+                const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
+                const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
+                const boxW = markerEl.offsetWidth;
+                const boxH = markerEl.offsetHeight;
+                selectionBox.style.left = (centerX - boxW / 2) + 'px';
+                selectionBox.style.top = (centerY - boxH / 2) + 'px';
             }
         }
     } else if (isResizing && selectedMarkerId && resizeStartBounds) {
-        // --- NEW LOGIC: Anchor-Fixed Resizing ---
-        // Resize around the specific anchor point (Center for Text, Bottom-Center for Icon)
-        // keeping the marker's geographic position (x,y) fixed.
+        // 完全重写的"跟随鼠标"resize:
+        // 用户拖动把手, 标记对应边缘/角点要落在鼠标位置; 对侧锚点不动; 整体按比例缩放.
+        // 全部用屏幕像素算, 不再绕道源坐标, 公式直观且与 mark.scale 数据解耦.
 
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
-        // Current Mouse in Logical Pixels
         const containerRect = editorMarkersContainer.getBoundingClientRect();
-        const mouseLogicX = (e.clientX - containerRect.left) / editorScale;
-        const mouseLogicY = (e.clientY - containerRect.top) / editorScale;
+        const mouseScreenX = e.clientX - containerRect.left;
+        const mouseScreenY = e.clientY - containerRect.top;
 
-        const isText = marker.type === 'text';
+        const {
+            anchorScreenX, anchorScreenY,
+            currentWidth, currentHeight,
+            startMouseX, startMouseY,
+            isText
+        } = resizeStartBounds;
 
-        // Define Anchor Point (Fixed) and Reference Dimensions
-        const anchorX = markerStartX; // Use stored start X to be safe, though x shouldn't change
-        const anchorY = markerStartY;
+        // 鼠标相对 mousedown 位置的位移
+        const deltaX = mouseScreenX - startMouseX;
+        const deltaY = mouseScreenY - startMouseY;
 
-        const startWidth = resizeStartBounds.width;
-        const startHeight = resizeStartBounds.height;
+        // 1. 根据被拖动的手柄算出"跟随鼠标"的新尺寸 (用相对位移, 不是绝对位置)
+        // 之前用绝对位置 (newWidth = 2 * (mouseX - anchorX)) 出现:
+        //   1. 文字标记选框半宽本身就窄, 鼠标靠近锚点就算出负数被钳到 10px, 看起来"完全无法缩放"
+        //   2. 缩小到 10px 后, 鼠标要在很特定位置才能算出 > 10 的 newWidth, 看起来"锁死"
+        // 改为相对位移: 鼠标从 mousedown 位置拖 deltaX/deltaY, 直接用 delta 增减尺寸.
+        let newWidth = currentWidth;
+        let newHeight = currentHeight;
 
-        // Calculate Scale Ratios based on Mouse Distance from Anchor
-        let ratioX = 0;
-        let ratioY = 0;
-        let validRatios = [];
-
-        // X-Axis (Width) Calculation - Same for Text and Icon (Centered Horizontally)
-        if (resizeHandle.includes('e') || resizeHandle.includes('w')) {
-            const dist = Math.abs(mouseLogicX - anchorX);
-            const startDist = startWidth / 2;
-            if (startDist > 0) {
-                ratioX = dist / startDist;
-                validRatios.push(ratioX);
-            }
+        // 'e' (右把手): 把手初始在 anchorX + currentWidth/2, 拖 deltaX 后位置是原位置 + deltaX
+        //   新右边缘 = 原右边缘 + deltaX
+        //   右边缘 = anchorX + newWidth/2
+        //   newWidth = currentWidth + 2 * deltaX
+        if (resizeHandle.includes('e')) {
+            newWidth = currentWidth + 2 * deltaX;
         }
-
-        // Y-Axis (Height) Calculation
-        if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
+        // 'w' (左把手): 把手初始在 anchorX - currentWidth/2, 拖 deltaX 后是原位置 + deltaX
+        //   新左边缘 = 原左边缘 + deltaX
+        //   左边缘 = anchorX - newWidth/2
+        //   -newWidth/2 = -currentWidth/2 + deltaX  =>  newWidth = currentWidth - 2 * deltaX
+        if (resizeHandle.includes('w')) {
+            newWidth = currentWidth - 2 * deltaX;
+        }
+        // 'n' (上把手): 把手初始在标记上边缘, 拖 deltaY 后新上边缘 = 原上边缘 + deltaY
+        if (resizeHandle.includes('n')) {
             if (isText) {
-                // Text: Centered Vertically
-                const dist = Math.abs(mouseLogicY - anchorY);
-                const startDist = startHeight / 2;
-                if (startDist > 0) {
-                    ratioY = dist / startDist;
-                    validRatios.push(ratioY);
-                }
+                // 文字锚点中心: 原上边缘 = anchorY - currentHeight/2
+                //   newTop = anchorY - currentHeight/2 + deltaY
+                //   newTop = anchorY - newHeight/2
+                //   newHeight = currentHeight - 2 * deltaY  (向上拖, deltaY 负, newHeight 增大)
+                newHeight = currentHeight - 2 * deltaY;
             } else {
-                // Icon: Anchored at Bottom
-                if (resizeHandle.includes('n')) {
-                    // Dragging Top: Distance represents full height
-                    // Mouse should be ABOVE anchor (y < anchorY)
-                    const dist = anchorY - mouseLogicY;
-                    // Allow negative (flipping) or clamp? Let's assume clamp to min size handled later
-                    // But effectively we care about the magnitude of the new height intent
-                    // For intuitive feel from top handle:
-                    const safeDist = Math.max(1, dist);
-                    ratioY = safeDist / startHeight;
-                    validRatios.push(ratioY);
-                }
-                // Handle 's' (Bottom) for Icon is effectively dragging the anchor itself 
-                // Since we enforce fixed anchor, 's' handle resizing is ambiguous/ineffective for height 
-                // unless we allow growing downwards (which changes anchor visually). 
-                // We'll skip Y-contribution for 's' handle on Icons to prevent jumpiness.
+                // icon 锚点底中心: 原上边缘 = anchorY - currentHeight
+                //   newTop = anchorY - currentHeight + deltaY
+                //   newTop = anchorY - newHeight
+                //   newHeight = currentHeight - deltaY
+                newHeight = currentHeight - deltaY;
+            }
+        }
+        // 's' (下把手): 把手初始在标记下边缘, 拖 deltaY 后新下边缘 = 原下边缘 + deltaY
+        if (resizeHandle.includes('s')) {
+            if (isText) {
+                // 文字: 原下边缘 = anchorY + currentHeight/2
+                //   newBottom = anchorY + currentHeight/2 + deltaY
+                //   newBottom = anchorY + newHeight/2
+                //   newHeight = currentHeight + 2 * deltaY
+                newHeight = currentHeight + 2 * deltaY;
+            } else {
+                // icon: 下边缘就是锚点 (固定在 anchorY), 拖 's' 改不了 Y
+                newHeight = currentHeight;
             }
         }
 
-        // Determine Final Scale Ratio
-        // If multiple handles (corner), take the MAX change to allow 'filling' outwards
-        // or average? Max usually feels best ("stretchiest").
-        let finalRatio = 1.0;
+        // 2. 下限钳到 4px (防拖到锚点另一侧算出负值/0, 标记彻底消失).
+        //    上限不设, 让用户能继续缩放; 失控值 (e.g. 鼠标飞出几万像素) 信任用户能拖回.
+        newWidth = Math.max(4, newWidth);
+        newHeight = Math.max(4, newHeight);
 
-        if (validRatios.length > 0) {
-            finalRatio = Math.max(...validRatios);
-        } else {
-            // Fallback for cases like dragging 's' on Icon (only Y axis but ignored)
-            // Just keep scale or default to 1? 
-            // Better: if corner drag (se/sw) on icon, we have X ratio, so we use that.
-            // If pure 's' drag on icon, we do nothing (finalRatio 1 -> change nothing or stay startScale).
-            // Actually, we should probably compare against startScale 1.0 relative to operation
-            finalRatio = 1.0;
+        // 3. 由新尺寸反推 scale
+        //    ratioX/Y = newSize / currentSize
+        //    max 保证拖动方向"撑到"鼠标, 另一轴等比 (圆角/icon 不变扁)
+        //    单轴把手 (e/w/n/s) 只有一个 ratio 有意义, 另一个是 1
+        //    角点把手两个 ratio 都有, max 决定缩放比例
+        const ratioX = newWidth / currentWidth;
+        const ratioY = newHeight / currentHeight;
+        const newScale = markerStartScale * Math.max(ratioX, ratioY);
 
-            // If dragging 's' on icon, let's try to use X movement if significant? No.
-            // Just return if no valid ratio.
-            if (resizeHandle === 's' && !isText) return;
-        }
-
-        // Apply Ratio to Start Scale
-        let newScale = markerStartScale * finalRatio;
-        newScale = Math.max(0.1, newScale); // Minimum limit
-
-        // Update Marker Logic
+        // 4. 应用到标记
         marker.scale = newScale;
-        // marker.x and marker.y remain UNCHANGED (Fixed Anchor)
 
-        // Update Visuals
+        // 5. box 和 font 全部交给 updateEditorMarkerScales 算 (从 targetSize 派生),
+        //    不要在 resize handler 里手动写 style.width/height, 那样 box 和 font 会脱钩.
+        //    之前 icon/text 两套逻辑互相对不齐, 现在统一走 targetSize 公式.
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
-        if (markerEl) {
-            // Position remains fixed at marker.x/y
-            // Just update transform
-            if (isText || markerEl.classList.contains('marker-text-only')) {
-                markerEl.style.transform = `translate(-50%, -50%) scale(${marker.scale})`;
-            } else {
-                markerEl.style.transform = `translate(-50%, -100%) scale(${marker.scale})`;
-            }
+        updateEditorMarkerScales();
 
-            // Sync Selection Box - 使用屏幕坐标直接定位
-            if (selectionBox) {
-                const markerRect = markerEl.getBoundingClientRect();
-                const containerRect = editorMarkersContainer.getBoundingClientRect();
+        // 6. 选择框跟随 - 跟 syncSelectionBoxToSelected 保持一致: AABB 中心定位 +
+        //    offsetWidth/Height 尺寸 + 一起旋转.
+        if (markerEl && selectionBox) {
+            const markerRect = markerEl.getBoundingClientRect();
+            const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
+            const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
+            const width = markerEl.offsetWidth;
+            const height = markerEl.offsetHeight;
+            const left = centerX - width / 2;
+            const top = centerY - height / 2;
 
-                const left = (markerRect.left - containerRect.left) / editorScale;
-                const top = (markerRect.top - containerRect.top) / editorScale;
-                const width = markerRect.width / editorScale;
-                const height = markerRect.height / editorScale;
+            const marker = markers.find(m => m.id === selectedMarkerId);
+            const rotation = (marker && marker.rotation) || 0;
 
-                selectionBox.style.left = left + 'px';
-                selectionBox.style.top = top + 'px';
-                selectionBox.style.width = width + 'px';
-                selectionBox.style.height = height + 'px';
-                selectionBox.style.transform = 'none';
+            selectionBox.style.left = left + 'px';
+            selectionBox.style.top = top + 'px';
+            selectionBox.style.width = width + 'px';
+            selectionBox.style.height = height + 'px';
+            selectionBox.style.transform = `rotate(${rotation}deg)`;
+            selectionBox.style.transformOrigin = 'center center';
 
-                // 更新手柄大小和位置
-                const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
-                const handles = selectionBox.querySelectorAll('.resize-handle');
-                handles.forEach(handle => {
-                    handle.style.width = baseHandleSize + 'px';
-                    handle.style.height = baseHandleSize + 'px';
-                });
-                updateHandlePositions(baseHandleSize);
-            }
+            const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
+            const handles = selectionBox.querySelectorAll('.resize-handle');
+            handles.forEach(handle => {
+                handle.style.width = baseHandleSize + 'px';
+                handle.style.height = baseHandleSize + 'px';
+            });
+            updateHandlePositions(baseHandleSize);
         }
 
         updateScaleIndicator(marker.scale);
@@ -2082,10 +2411,25 @@ async function handleEditorMouseUp() {
                 console.error('Failed to update marker scale:', error);
             }
         }
+    } else if (isRotating && selectedMarkerId) {
+        // 保存标记旋转
+        const marker = markers.find(m => m.id === selectedMarkerId);
+        if (marker) {
+            try {
+                await fetch(`/api/markers/${marker.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(marker)
+                });
+            } catch (error) {
+                console.error('Failed to update marker rotation:', error);
+            }
+        }
     }
 
     isDraggingMarker = false;
     isResizing = false;
+    isRotating = false;
     resizeHandle = null;
 }
 
@@ -2529,6 +2873,16 @@ async function loadSettings() {
             document.getElementById('siteTitle').value = settings.title;
         }
 
+        const multiplier = (settings.markerSizeMultiplier !== undefined && settings.markerSizeMultiplier !== null)
+            ? settings.markerSizeMultiplier : 1.0;
+        globalMarkerSizeMultiplier = multiplier;
+        const slider = document.getElementById('markerSizeMultiplier');
+        const valueLabel = document.getElementById('markerSizeValue');
+        if (slider) {
+            slider.value = multiplier;
+            if (valueLabel) valueLabel.textContent = parseFloat(multiplier).toFixed(2) + '×';
+        }
+
         if (settings.logoUrl) {
             const preview = document.getElementById('siteLogoPreview');
             const placeholder = document.getElementById('noLogoPlaceholder');
@@ -2538,6 +2892,84 @@ async function loadSettings() {
         }
     } catch (error) {
         console.error('Failed to load settings:', error);
+    }
+}
+
+// 重置当前编辑中标记的旋转角度为 0
+window.resetMarkerRotation = function () {
+    const rotField = document.getElementById('markerRotation');
+    if (rotField) {
+        rotField.value = 0;
+        // 同步到当前选中的标记 (如果有) 并实时刷新预览
+        if (selectedMarkerId) {
+            const marker = markers.find(m => m.id === selectedMarkerId);
+            if (marker) {
+                marker.rotation = 0;
+                updateEditorMarkerScales();
+            }
+        }
+    }
+};
+
+// 旋转角度输入框实时同步到选中标记
+function setupRotationFieldListener() {
+    const rotField = document.getElementById('markerRotation');
+    if (!rotField) return;
+    rotField.addEventListener('input', () => {
+        if (selectedMarkerId) {
+            const marker = markers.find(m => m.id === selectedMarkerId);
+            if (marker) {
+                const idField = document.getElementById('markerId');
+                if (idField && idField.value === selectedMarkerId) {
+                    marker.rotation = parseFloat(rotField.value) || 0;
+                    updateEditorMarkerScales();
+                }
+            }
+        }
+    });
+}
+
+// 层级 (Z-Order) 输入框实时同步 + 顶层/底层快捷按钮
+// 大数字覆盖在上面, 解决大标记挡住小标记的问题
+function setupZIndexButtons() {
+    const zField = document.getElementById('markerZIndex');
+    const frontBtn = document.getElementById('bringToFrontBtn');
+    const backBtn = document.getElementById('sendToBackBtn');
+    if (!zField) return;
+
+    // 输入框实时同步 (编辑当前选中标记的 zIndex, 立刻反映到地图上)
+    zField.addEventListener('input', () => {
+        if (selectedMarkerId) {
+            const marker = markers.find(m => m.id === selectedMarkerId);
+            const idField = document.getElementById('markerId');
+            if (marker && idField && idField.value === selectedMarkerId) {
+                const v = parseInt(zField.value, 10) || 0;
+                marker.zIndex = v;
+                // 立刻更新 DOM 的 z-index, 不用等保存
+                const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+                if (markerEl) markerEl.style.zIndex = v;
+            }
+        }
+    });
+
+    // 顶层按钮: 当前 zIndex = 所有标记 zIndex 最大值 + 1
+    if (frontBtn) {
+        frontBtn.addEventListener('click', () => {
+            if (markers.length === 0) return;
+            const maxZ = markers.reduce((m, mk) => Math.max(m, parseInt(mk.zIndex, 10) || 0), 0);
+            zField.value = maxZ + 1;
+            zField.dispatchEvent(new Event('input'));
+        });
+    }
+
+    // 底层按钮: 当前 zIndex = 所有标记 zIndex 最小值 - 1
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            if (markers.length === 0) return;
+            const minZ = markers.reduce((m, mk) => Math.min(m, parseInt(mk.zIndex, 10) || 0), 0);
+            zField.value = minZ - 1;
+            zField.dispatchEvent(new Event('input'));
+        });
     }
 }
 
@@ -2556,6 +2988,11 @@ async function saveSettings() {
     let logoUrl = preview.dataset.newUrl || (preview.style.display !== 'none' ? preview.getAttribute('src') : '');
 
     try {
+        const multiplierSlider = document.getElementById('markerSizeMultiplier');
+        const markerSizeMultiplier = multiplierSlider
+            ? parseFloat(multiplierSlider.value)
+            : 1.0;
+
         const response = await fetch('/api/settings', {
             method: 'POST',
             headers: {
@@ -2563,7 +3000,8 @@ async function saveSettings() {
             },
             body: JSON.stringify({
                 title,
-                logoUrl
+                logoUrl,
+                markerSizeMultiplier
             })
         });
 
@@ -2636,6 +3074,24 @@ function setupSettingsListeners() {
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             saveSettings();
+        });
+    }
+
+    // 标记尺寸 slider 实时更新显示和编辑器预览
+    const sizeSlider = document.getElementById('markerSizeMultiplier');
+    const sizeValueLabel = document.getElementById('markerSizeValue');
+    if (sizeSlider && sizeValueLabel) {
+        sizeSlider.addEventListener('input', () => {
+            const v = parseFloat(sizeSlider.value);
+            sizeValueLabel.textContent = v.toFixed(2) + '×';
+            // 实时预览: 仅在编辑器存在时刷新标记缩放
+            globalMarkerSizeMultiplier = v;
+            if (typeof updateEditorMarkerScales === 'function') {
+                updateEditorMarkerScales();
+            }
+            if (typeof updateTempMarkerPosition === 'function') {
+                updateTempMarkerPosition();
+            }
         });
     }
 

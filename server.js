@@ -344,7 +344,6 @@ app.post('/api/map/upload', requireAuth, upload.single('map'), async (req, res) 
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
     const imageUrl = '/uploads/' + req.file.filename;
     await writeJSON(config.MAP_DATA_FILE, { imageUrl }, 'map');
     res.json({ imageUrl });
@@ -521,7 +520,10 @@ app.put('/api/icon-types/:id', requireAuth, async (req, res) => {
 // Default settings
 const DEFAULT_SETTINGS = {
   title: '互动地图',
-  logoUrl: ''
+  logoUrl: '',
+  // 全局前台标记尺寸倍数, 与单个标记的 scale 相乘得到最终屏幕像素尺寸
+  // 0.3 = 最小, 1.0 = 默认, 2.0 = 最大
+  markerSizeMultiplier: 1.0
 };
 
 // Get settings

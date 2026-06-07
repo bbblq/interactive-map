@@ -590,6 +590,65 @@
     margin-bottom: 20px;
 }
 
+/* 颜色选择器: 色板单行, 滑块独占一整行, 整行宽好操作 */
+.color-swatch {
+    /* 把默认 <input type="color"> 渲染成 40x40 圆角方块, 不要再是横线 */
+    width: 100%;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: block;
+}
+.color-swatch::-webkit-color-swatch-wrapper {
+    padding: 2px;
+    border-radius: 4px;
+}
+.color-swatch::-webkit-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+.color-swatch::-moz-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+.color-alpha {
+    width: 100%;
+    height: 8px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(to right, rgba(0,0,0,0.1), rgba(0,0,0,0.6));
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 4px 0 0 0;
+    padding: 0;
+    display: block;
+}
+.color-alpha::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--primary-color, #4a90e2);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.color-alpha::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--primary-color, #4a90e2);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
 .form-group label {
     display: block;
     margin-bottom: 8px;
@@ -942,20 +1001,55 @@
     cursor: e-resize;
 }
 
+/* Rotation Handle - 绿色圆形, 位于选择框上方, 拖动绕标记中心旋转 */
+.rotate-handle {
+    position: absolute;
+    background: white;
+    border: 3px solid #4caf50;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    pointer-events: all;
+    z-index: 11;
+    cursor: crosshair;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4caf50;
+    font-weight: bold;
+    user-select: none;
+    line-height: 1;
+    transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.rotate-handle:hover {
+    background: #4caf50;
+    color: white;
+    transform: scale(1.2);
+}
+
+/* 连线: 从选择框顶部到旋转把手 */
+.rotate-line {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    background: #4caf50;
+    pointer-events: none;
+    z-index: 10;
+    border-radius: 1px;
+}
+
 /* Marker being dragged */
 .marker.dragging {
     opacity: 0.7;
     cursor: move !important;
 }
 
-/* Editor Markers Container - CRITICAL for selection box positioning */
+/* Editor Markers Container - CRITICAL for selection box positioning
+   通用样式在 style.css 的 .markers-layer 里, 这里只放编辑器特有的覆盖 */
 #editorMarkers {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
+    /* 继承 .markers-layer 的定位, 此处不重复声明 */
 }
 
 /* Allow markers to be clickable */

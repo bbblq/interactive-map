@@ -88,9 +88,10 @@
 
                             <div id="editorMapWrapper" class="editor-map-wrapper">
                                 <div id="editorMapImage" class="map-image">
-                                    <img id="editorMapImg" src="" alt="互动地图" style="display: none;">
-                                    <div id="editorMarkers"></div>
+                                    <img id="editorMapImg" src="" alt="互动地图" decoding="async" style="display: none;">
                                 </div>
+                                <!-- 标记层: 移出 transform 链, 屏幕像素坐标, 矢量清晰 -->
+                                <div id="editorMarkers" class="markers-layer"></div>
                                 <div id="editorEmptyState" class="empty-state">
                                     <div class="empty-state-icon">🗺️</div>
                                     <h3>请先上传地图</h3>
@@ -206,6 +207,21 @@
                             <div class="form-group">
                                 <label>网站名称</label>
                                 <input type="text" id="siteTitle" placeholder="输入网站名称" class="form-input">
+                            </div>
+
+                            <div class="form-group">
+                                <label>低缩放标记放大倍数 <span id="markerSizeValue" style="color: var(--primary-color); font-weight: 700;">1.0×</span></label>
+                                <input type="range" id="markerSizeMultiplier" min="0.3" max="2.0" step="0.05" value="1.0"
+                                    class="form-range" style="width: 100%;">
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                                    <span>0.3×</span>
+                                    <span>1.0× 默认</span>
+                                    <span>2.0×</span>
+                                </div>
+                                <small style="color: var(--text-secondary); font-size: 12px;">
+                                    仅在地图缩放 &lt; 此值时生效 (即初始 fit 状态, 默认 20%). 在此缩放下, 标记反向放大到稳定屏幕像素尺寸.
+                                    放大到阈值以上后, 标记按自身 scale 渲染, 此值不再干预. 建议 0.4-0.7.
+                                </small>
                             </div>
 
                             <div class="form-group">
@@ -392,18 +408,32 @@
                             </div>
                             <div class="form-group">
                                 <label>文字颜色</label>
-                                <input type="color" id="textColor" value="#333333">
+                                <input type="color" id="textColor" value="#333333" class="color-swatch">
+                            </div>
+                            <div class="form-group">
+                                <label>不透明度: <span id="textColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="textColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
                                 <label>背景颜色</label>
-                                <input type="color" id="bgColor" value="#ffffff">
+                                <input type="color" id="bgColor" value="#ffffff" class="color-swatch">
                             </div>
                             <div class="form-group">
                                 <label>边框颜色</label>
-                                <input type="color" id="borderColor" value="#cccccc">
+                                <input type="color" id="borderColor" value="#cccccc" class="color-swatch">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>背景不透明度: <span id="bgColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="bgColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
+                            </div>
+                            <div class="form-group">
+                                <label>边框不透明度: <span id="borderColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="borderColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
                             </div>
                         </div>
 
@@ -459,6 +489,33 @@
 
                     <!-- 文字标记的详情 -->
                     <div id="textMarkerDetails" class="marker-settings">
+                        <!-- 公共变换设置: 旋转角度 (文字/图标都可见) -->
+                        <div class="form-group">
+                            <label>旋转角度 (°)</label>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <input type="number" id="markerRotation" value="0" min="-360" max="360" step="1"
+                                    style="flex: 1;">
+                                <button type="button" class="btn btn-secondary" id="resetRotationBtn"
+                                    onclick="resetMarkerRotation()"
+                                    style="padding: 6px 10px; font-size: 16px;" title="重置为 0°">↺</button>
+                            </div>
+                            <small style="color: var(--text-secondary); font-size: 12px;">拖动编辑器中的绿色旋转把手, 或直接输入角度</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>层级 (Z-Order) - 数字大者在上</label>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <input type="number" id="markerZIndex" value="0" step="1" style="flex:1;min-width:0;">
+                                <button type="button" id="bringToFrontBtn" title="置于顶层"
+                                    style="padding:6px 10px;white-space:nowrap;cursor:pointer;">⤒︎ 顶层</button>
+                                <button type="button" id="sendToBackBtn" title="置于底层"
+                                    style="padding:6px 10px;white-space:nowrap;cursor:pointer;">⤓︎ 底层</button>
+                            </div>
+                            <small style="color: var(--text-secondary); font-size: 12px;">
+                                大数字覆盖在上面, 解决大标记挡住小标记的问题
+                            </small>
+                        </div>
+
                         <div class="form-group">
                             <label>详情</label>
                             <div class="rich-text-toolbar">

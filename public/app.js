@@ -4,6 +4,12 @@ let markers = [];
 let scale = 1;
 let translateX = 0;
 let translateY = 0;
+// 初始 fit-to-screen 时的缩放比例, 用作标记"屏幕尺寸"基准.
+// 标记使用反向缩放 (1/scale 倍), 在任意缩放下都保持稳定的屏幕像素尺寸,
+// 避免高分辨率地图下默认显示过小、缩放后又过大的问题.
+let baseScale = 1;
+// 全局前台标记尺寸倍数 (来自 settings.markerSizeMultiplier)
+let globalMarkerSizeMultiplier = 1.0;
 
 // XSS Protection
 function escapeHtml(text) {
@@ -77,6 +83,11 @@ async function loadSettings() {
         if (settings.title) {
             document.getElementById('headerTitle').textContent = settings.title;
             document.title = settings.title;
+        }
+
+        // 全局标记尺寸倍数, 默认 1.0
+        if (settings.markerSizeMultiplier !== undefined && settings.markerSizeMultiplier !== null) {
+            globalMarkerSizeMultiplier = settings.markerSizeMultiplier;
         }
 
         if (settings.logoUrl) {
@@ -167,6 +178,12 @@ function showMarkerDetail(marker) {
         let fields = [];
         fields.push(`<p><strong>类型</strong> ${iconDisplay} ${category.name}</p>`);
 
+        // 详情(富文本) - 后台用所见即所得编辑器维护, 包含链接/加粗等格式.
+        // HTML 由登录管理员写入, 视为可信; 与文字标记共用同一字段语义.
+        if (marker.details && String(marker.details).trim()) {
+            fields.push(`<div class="marker-rich-details" style="line-height: 1.6; margin: 12px 0; padding: 12px 14px; background: var(--bg-light); border-radius: 8px; border-left: 3px solid var(--primary-color);">${marker.details}</div>`);
+        }
+
         if (marker.description) {
             fields.push(`<p><strong>描述</strong><br><span style="white-space: pre-wrap; line-height: 1.6;">${nl2br(escapeHtml(marker.description))}</span></p>`);
         }
@@ -182,6 +199,12 @@ function showMarkerDetail(marker) {
 
         modalBody.innerHTML = fields.join('');
     }
+
+    // 所有详情中的超链接都在新标签页打开, 避免覆盖地图主页面
+    modalBody.querySelectorAll('a').forEach(a => {
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+    });
 
     markerModal.classList.add('active');
 }
@@ -237,7 +260,7 @@ async function loadMarkers() {
     }
 }
 
-// Center map (unchanged)
+// Center map
 function centerMap() {
     const containerWidth = mapWrapper.offsetWidth;
     const containerHeight = mapWrapper.offsetHeight;
@@ -248,6 +271,7 @@ function centerMap() {
     const scaleX = containerWidth / imgWidth;
     const scaleY = containerHeight / imgHeight;
     scale = Math.min(scaleX, scaleY) * 0.9;
+    baseScale = scale;
 
     // Center the image
     translateX = (containerWidth - imgWidth * scale) / 2;
@@ -256,30 +280,105 @@ function centerMap() {
     updateTransform();
 }
 
-// Update transform (unchanged)
-function updateTransform() {
-    mapImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
-    document.getElementById('zoomLevel').textContent = Math.round(scale * 100) + '%';
-    updateMarkerScales();
+// requestAnimationFrame 节流: 拖拽/滚轮事件高频触发时,
+// 把多次 transform 更新合并到下一帧, 避免布局抖动
+let transformRafId = null;
+let transformDirty = false;
+function scheduleTransform() {
+    if (transformRafId !== null) return;
+    transformRafId = requestAnimationFrame(() => {
+        transformRafId = null;
+        if (!transformDirty) return;
+        transformDirty = false;
+        mapImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        const zoomLabel = document.getElementById('zoomLevel');
+        if (zoomLabel) zoomLabel.textContent = Math.round(scale * 100) + '%';
+        updateMarkerScales();
+    });
 }
 
-// Update marker scales (位置由CSS百分比自动处理)
-function updateMarkerScales() {
-    const markerElements = markersContainer.querySelectorAll('.marker');
-    markerElements.forEach((markerEl, index) => {
-        const marker = markers[index];
-        if (!marker) return;
+function updateTransform() {
+    transformDirty = true;
+    scheduleTransform();
+}
+
+// 标记按目标屏幕像素尺寸直接栅格化 (不走 transform: scale), 保证矢量清晰.
+// 行为:
+//   缩放 < 阈值 (= globalMarkerSizeMultiplier) -> 反向缩放, 标记目标像素 = BASE * markerScale * sizeMul
+//   缩放 >= 阈值                                -> 用 marker 自身 scale, 标记目标像素 = BASE * markerScale * scale
+// 例子 (markerScale=1.0, sizeMul=0.5, BASE=32):
+//   scale=0.2 (fit) -> 16px (反缩放)
+//   scale=0.5 (阈值) -> 16px (连续)
+//   scale=1.0 (100%) -> 32px (自然)
+//   scale=2.0 (200%) -> 64px (随地图放大)
+const MARKER_BASE_SIZE = 32; // 与 CSS 中 .marker-icon-part 原始宽高一致
+const MARKER_FONT_BASE = 13; // 与 CSS 中 .marker-label-part 原始 font-size 一致
+const ICON_TEXT_GAP_BASE = 4; // 图标与文字间距
+const LABEL_PADDING_BASE = 10; // 文字左右内边距
+
+function updateMarkerTransforms() {
+    if (!mapImg.naturalWidth) return;
+    const sizeMul = globalMarkerSizeMultiplier || 1.0;
+    const threshold = sizeMul;
+
+    // 用 [data-marker-id] 精确匹配, 避免筛选/搜索后 DOM 顺序与 markers 数组顺序不一致
+    for (let i = 0; i < markers.length; i++) {
+        const marker = markers[i];
+        const markerEl = markersContainer.querySelector(`.marker[data-marker-id="${CSS.escape(marker.id)}"]`);
+        if (!marker || !markerEl) continue;
 
         const markerScale = marker.scale || 1.0;
+        const rotation = marker.rotation || 0;
+        const isText = marker.type === 'text';
 
-        // 文字标记：使用固定scale
-        if (markerEl.classList.contains('marker-text-only')) {
-            markerEl.style.transform = `translate(-50%, -50%) scale(${markerScale})`;
+        // 计算目标屏幕像素尺寸
+        let targetSize;
+        if (scale < threshold) {
+            targetSize = MARKER_BASE_SIZE * markerScale * sizeMul;
         } else {
-            // 图标标记：由于Anchor设定在底部中心，使用-100% Y轴偏移
-            markerEl.style.transform = `translate(-50%, -100%) scale(${markerScale})`;
+            targetSize = MARKER_BASE_SIZE * markerScale * scale;
         }
-    });
+
+        // 屏幕像素位置: mapImage.transform = translate(tx, ty) scale(s)
+        // 源坐标 (mx, my) -> 屏幕 (tx + mx*s, ty + my*s)
+        const screenX = translateX + marker.x * scale;
+        const screenY = translateY + marker.y * scale;
+        markerEl.style.left = screenX + 'px';
+        markerEl.style.top = screenY + 'px';
+
+        if (isText) {
+            // 文字标记: 跟图标标记同构, 边长 = targetSize, 文字 = 13 * targetSize / 32.
+            // 跟编辑器 (admin.js) 行为一致, 不读 style.width/height, 全部从 targetSize 派生.
+            const boxSize = targetSize;
+            const textWidth = boxSize * 1.5;
+            markerEl.style.width = textWidth + 'px';
+            markerEl.style.height = boxSize + 'px';
+            const label = markerEl.querySelector('.text-label');
+            if (label) {
+                const fontPx = Math.max(6, MARKER_FONT_BASE * boxSize / MARKER_BASE_SIZE);
+                label.style.fontSize = fontPx + 'px';
+            }
+            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+        } else {
+            // 图标标记: 标记尺寸由 capsule 内容决定, 动态更新内部 icon/label 尺寸
+            const iconPart = markerEl.querySelector('.marker-icon-part');
+            if (iconPart) {
+                iconPart.style.width = targetSize + 'px';
+                iconPart.style.height = targetSize + 'px';
+            }
+            const labelPart = markerEl.querySelector('.marker-label-part');
+            if (labelPart) {
+                const fontPx = Math.max(10, MARKER_FONT_BASE * (targetSize / MARKER_BASE_SIZE));
+                labelPart.style.fontSize = fontPx + 'px';
+            }
+            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg)`;
+        }
+    }
+}
+
+// 保留旧函数名以兼容其他调用
+function updateMarkerScales() {
+    updateMarkerTransforms();
 }
 
 // 保留旧函数名以兼容
@@ -298,36 +397,45 @@ function renderMarkers() {
 
         const markerEl = document.createElement('div');
 
-        // 计算百分比位置
-        const imgWidth = mapImg.naturalWidth || 1;
-        const imgHeight = mapImg.naturalHeight || 1;
-        const leftPercent = (marker.x / imgWidth) * 100;
-        const topPercent = (marker.y / imgHeight) * 100;
+        // 不在这里设 left/top/width/height, 全部由 updateMarkerTransforms
+        // 在屏幕像素坐标下重新计算, 保证 SVG/文字按最终屏幕像素栅格化, 矢量清晰
 
         // 判断是否是文字标记
         if (marker.type === 'text') {
             markerEl.className = `marker marker-text-only ${marker.category || ''}${!showMarkers ? ' hidden' : ''}`;
-            markerEl.style.left = leftPercent + '%';
-            markerEl.style.top = topPercent + '%';
             const content = escapeHtml(marker.content || marker.label);
-            markerEl.innerHTML = `<div class="text-label">${content}</div>`;
+            // 同步编辑器里设的颜色 (8 位 hex 含 alpha, CSS 原生支持)
+            const textColor = marker.textColor || '';
+            const bgColor = marker.bgColor || '';
+            const borderColor = marker.borderColor || '';
+            const borderWidth = (marker.borderWidth != null) ? marker.borderWidth : 1;
+            const colorStyle = [
+                'width:100%',
+                'height:100%',
+                'box-sizing:border-box',
+                'display:flex',
+                'align-items:center',
+                'justify-content:center',
+                textColor ? `color:${textColor}` : '',
+                bgColor ? `background:${bgColor}` : '',
+                (borderColor || borderWidth) ? `border:${borderWidth}px solid ${borderColor || '#cccccc'}` : ''
+            ].filter(Boolean).join(';');
+            markerEl.innerHTML = `<div class="text-label" style="${colorStyle}">${content}</div>`;
         } else {
             // 图标标记
             markerEl.className = `marker ${marker.category}${!showMarkers ? ' hidden' : ''}`;
-            markerEl.style.left = leftPercent + '%';
-            markerEl.style.top = topPercent + '%';
 
             let iconContent;
             const type = iconTypes[marker.category] || iconTypes.other;
 
             if (type && type.imageUrl) {
-                // Custom Image
-                iconContent = `<img src="${type.imageUrl}" style="width: 32px; height: 32px; object-fit: contain;">`;
+                // Custom Image - 用 100% 填充父容器, 父容器尺寸由 updateMarkerTransforms 控制
+                iconContent = `<img src="${type.imageUrl}" style="width: 100%; height: 100%; object-fit: contain;">`;
             } else {
                 // SVG Icon
                 const svg = (type && SVG_ICONS[type.icon]) ? SVG_ICONS[type.icon] : SVG_ICONS.other;
                 const color = (type && type.color) ? type.color : '#9e9e9e';
-                iconContent = `<div style="color: ${color}; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">${svg}</div>`;
+                iconContent = `<div style="color: ${color}; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">${svg}</div>`;
             }
 
             const bgColor = type.bgColor || '#f8f9fa';
@@ -349,21 +457,18 @@ function renderMarkers() {
                     white-space: nowrap;
                 ">
                     <div class="marker-icon-part" style="
-                        width: 32px; 
-                        height: 32px; 
-                        display: flex; 
-                        align-items: center; 
-                        justify-content: center; 
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
                         flex-shrink: 0;
                     ">
                         ${iconContent}
                     </div>
                     ${marker.showLabel !== false ? `
                         <div class="marker-label-part" style="
-                            padding-left: 4px; 
-                            padding-right: 10px; 
-                            font-size: 13px; 
-                            font-weight: 600; 
+                            padding-left: 4px;
+                            padding-right: 10px;
+                            font-weight: 600;
                             color: ${textColor};
                             text-shadow: none;
                         ">
@@ -373,6 +478,10 @@ function renderMarkers() {
                 </div>
             `;
         }
+
+        markerEl.dataset.markerId = marker.id;
+        // 层级 (Z-Order): 大数字覆盖在上面
+        markerEl.style.zIndex = parseInt(marker.zIndex, 10) || 0;
 
         markerEl.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -592,9 +701,15 @@ function handleSearch(e) {
     }
 
     // Filter markers based on search query
+    // 同时匹配标签名/描述/部门/电话/邮箱, 以及标记的分类中文名/英文 icon 名
     const results = markers.filter(marker => {
+        const cat = iconTypes[marker.category];
+        const categoryName = (cat && cat.name) || '';
+        const categoryIcon = (cat && cat.icon) || '';
         return (
             marker.label?.toLowerCase().includes(query) ||
+            categoryName.toLowerCase().includes(query) ||
+            categoryIcon.toLowerCase().includes(query) ||
             marker.description?.toLowerCase().includes(query) ||
             marker.department?.toLowerCase().includes(query) ||
             marker.phone?.includes(query) ||
@@ -644,21 +759,21 @@ window.selectSearchResult = function (markerId) {
 };
 
 // Highlight marker with animation
+// 用 data-marker-id 精确查找, 不要用 DOM 索引:
+// 筛选/搜索会让 renderMarkers 清空后只重渲染可见标记, DOM 顺序和 markers 数组不一致.
 function highlightMarker(markerId) {
-    const markerIndex = markers.findIndex(m => m.id === markerId);
-    if (markerIndex === -1) return;
+    const allMarkerEls = markersContainer.querySelectorAll('.marker');
+    // 先移除所有高亮, 再给目标加
+    allMarkerEls.forEach(el => {
+        if (el.classList.contains('highlighted')) {
+            el.classList.remove('highlighted');
+        }
+    });
 
-    const markerElements = markersContainer.querySelectorAll('.marker');
-    const markerEl = markerElements[markerIndex];
-
+    // 用 [data-marker-id="..."] 精确匹配, 不依赖 DOM 顺序
+    const markerEl = markersContainer.querySelector(`.marker[data-marker-id="${CSS.escape(markerId)}"]`);
     if (markerEl) {
-        // Remove previous highlights
-        markerElements.forEach(el => el.classList.remove('highlighted'));
-
-        // Add highlight
         markerEl.classList.add('highlighted');
-
-        // Remove highlight after animation
         setTimeout(() => {
             markerEl.classList.remove('highlighted');
         }, 4500);
