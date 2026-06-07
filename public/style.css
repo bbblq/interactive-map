@@ -745,7 +745,7 @@ body {
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border-color);
-  transition: all 0.3s ease;
+  transition: background 0.3s ease, color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
   /* 配合 .marker 的 min-width: 0, 标记缩小到比文字还窄时, 文字用省略号截断 */
   max-width: 100%;
   overflow: hidden;
@@ -1155,4 +1155,9 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s ease;
+}
+
+/* Center sidebar icons in collapsed state */
+.sidebar:not(.expanded) .category-left {
+  justify-content: center;
 }

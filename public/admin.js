@@ -1229,7 +1229,7 @@ function renderMarkersList() {
         <div class="marker-item-actions">
           <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
           <button class="icon-btn" onclick="event.stopPropagation(); editMarker('${marker.id}')" title="编辑">✏️</button>
-          <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑�?/button>
+          <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑️</button>
         </div>
       </div>
       ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
@@ -2299,13 +2299,30 @@ function handleEditorMouseMove(e) {
         } else {
             // Icon marker: proportional scaling based on mouse coordinate distance
             let ratio = 1.0;
+            let targetWidth = startWidth;
+            let targetHeight = startHeight;
+
+            if (resizeHandle.includes('e')) {
+                targetWidth = startWidth + 2 * diffLocalX;
+            } else if (resizeHandle.includes('w')) {
+                targetWidth = startWidth - 2 * diffLocalX;
+            }
+
+            if (resizeHandle.includes('n')) {
+                targetHeight = startHeight - diffLocalY;
+            } else if (resizeHandle.includes('s')) {
+                targetHeight = startHeight + diffLocalY;
+            }
+
             if (resizeHandle.includes('e') || resizeHandle.includes('w')) {
-                ratio = newWidth / startWidth;
-            } else if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
-                ratio = newHeight / startHeight;
+                if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
+                    // Diagonal handles: use the maximum ratio to scale proportionally
+                    ratio = Math.max(targetWidth / startWidth, targetHeight / startHeight);
+                } else {
+                    ratio = targetWidth / startWidth;
+                }
             } else {
-                // Diagonal handles: use the maximum ratio
-                ratio = Math.max(newWidth / startWidth, newHeight / startHeight);
+                ratio = targetHeight / startHeight;
             }
             
             marker.scale = Math.max(0.1, markerScale * ratio);
