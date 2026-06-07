@@ -303,14 +303,10 @@ function updateTransform() {
 }
 
 // 标记按目标屏幕像素尺寸直接栅格化 (不走 transform: scale), 保证矢量清晰.
-// 行为:
-//   缩放 < 阈值 (= globalMarkerSizeMultiplier) -> 反向缩放, 标记目标像素 = BASE * markerScale * sizeMul
-//   缩放 >= 阈值                                -> 用 marker 自身 scale, 标记目标像素 = BASE * markerScale * scale
-// 例子 (markerScale=1.0, sizeMul=0.5, BASE=32):
-//   scale=0.2 (fit) -> 16px (反缩放)
-//   scale=0.5 (阈值) -> 16px (连续)
-//   scale=1.0 (100%) -> 32px (自然)
-//   scale=2.0 (200%) -> 64px (随地图放大)
+// 行为: 标记与地图等比缩放, sizeMul 作为全局倍率.
+//   targetSize = BASE * markerScale * sizeMul * (scale / baseScale)
+// 在 fit-to-screen (scale = baseScale) 时, targetSize = BASE * markerScale * sizeMul.
+// 缩放时标记与地图等比伸缩, 保证前台和后台视觉一致.
 const MARKER_BASE_SIZE = 32; // 与 CSS 中 .marker-icon-part 原始宽高一致
 const MARKER_FONT_BASE = 13; // 与 CSS 中 .marker-label-part 原始 font-size 一致
 const ICON_TEXT_GAP_BASE = 4; // 图标与文字间距
@@ -319,7 +315,7 @@ const LABEL_PADDING_BASE = 10; // 文字左右内边距
 function updateMarkerTransforms() {
     if (!mapImg.naturalWidth) return;
     const sizeMul = globalMarkerSizeMultiplier || 1.0;
-    const threshold = sizeMul;
+    const bs = baseScale || 1;
 
     // 用 [data-marker-id] 精确匹配, 避免筛选/搜索后 DOM 顺序与 markers 数组顺序不一致
     for (let i = 0; i < markers.length; i++) {
@@ -331,13 +327,8 @@ function updateMarkerTransforms() {
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
 
-        // 计算目标屏幕像素尺寸
-        let targetSize;
-        if (scale < threshold) {
-            targetSize = MARKER_BASE_SIZE * markerScale * sizeMul;
-        } else {
-            targetSize = MARKER_BASE_SIZE * markerScale * scale;
-        }
+        // 计算目标屏幕像素尺寸: 与地图等比缩放, sizeMul 作为全局倍率
+        const targetSize = MARKER_BASE_SIZE * markerScale * sizeMul * (scale / bs);
 
         // 屏幕像素位置: mapImage.transform = translate(tx, ty) scale(s)
         // 源坐标 (mx, my) -> 屏幕 (tx + mx*s, ty + my*s)
@@ -590,27 +581,14 @@ window.toggleMarkers = function () {
     return showMarkers;
 };
 
-// Focus marker
+// Focus marker - 带动画聚焦放大
 function focusMarker(markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) return;
 
-    // Center on marker
-    const containerWidth = mapWrapper.offsetWidth;
-    const containerHeight = mapWrapper.offsetHeight;
-
-    translateX = containerWidth / 2 - marker.x * scale;
-    translateY = containerHeight / 2 - marker.y * scale;
-
-    updateTransform();
-
-    // Show detail
-    // setTimeout(() => {
-    //     showMarkerDetail(marker);
-    // }, 300);
-
-    // Highlight the marker purely
-    highlightMarker(marker.id);
+    animateToMarker(marker, () => {
+        highlightMarker(marker.id);
+    });
 }
 
 
@@ -731,7 +709,7 @@ function highlightText(text, query) {
     return escapedText.replace(regex, '<strong style="color: var(--primary-color);">$1</strong>');
 }
 
-// Select search result
+// Select search result - 带动画聚焦放大
 window.selectSearchResult = function (markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) return;
@@ -740,22 +718,9 @@ window.selectSearchResult = function (markerId) {
     searchResults.classList.remove('active');
     searchInput.value = '';
 
-    // Center on marker with适当的缩放
-    const containerWidth = mapWrapper.offsetWidth;
-    const containerHeight = mapWrapper.offsetHeight;
-
-    // 如果当前缩放太小，放大到合适的比例
-    if (scale < 0.8) {
-        scale = 0.8;
-    }
-
-    translateX = containerWidth / 2 - marker.x * scale;
-    translateY = containerHeight / 2 - marker.y * scale;
-
-    updateTransform();
-
-    // Highlight the marker
-    highlightMarker(markerId);
+    animateToMarker(marker, () => {
+        highlightMarker(markerId);
+    });
 };
 
 // Highlight marker with animation
@@ -778,6 +743,64 @@ function highlightMarker(markerId) {
             markerEl.classList.remove('highlighted');
         }, 4500);
     }
+}
+
+// 聚焦动画: 平滑地缩放并平移到目标标记位置
+let animationFrameId = null;
+function animateToMarker(marker, onComplete) {
+    // 取消之前的动画
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+
+    const containerWidth = mapWrapper.offsetWidth;
+    const containerHeight = mapWrapper.offsetHeight;
+
+    // 目标缩放: 至少放大到 baseScale * 3 或当前缩放的 1.8 倍 (取大), 上限 5
+    const minTarget = baseScale * 3;
+    const fromScale = scale;
+    const targetScale = Math.min(5, Math.max(minTarget, fromScale * 1.8, 0.8));
+
+    // 目标平移: 将标记居中
+    const targetTranslateX = containerWidth / 2 - marker.x * targetScale;
+    const targetTranslateY = containerHeight / 2 - marker.y * targetScale;
+
+    const fromTranslateX = translateX;
+    const fromTranslateY = translateY;
+
+    const duration = 600; // ms
+    const startTime = performance.now();
+
+    // easeInOutCubic
+    function ease(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const t = ease(progress);
+
+        scale = fromScale + (targetScale - fromScale) * t;
+        translateX = fromTranslateX + (targetTranslateX - fromTranslateX) * t;
+        translateY = fromTranslateY + (targetTranslateY - fromTranslateY) * t;
+
+        // 直接更新 (不走 scheduleTransform 的 dirty 机制, 保证每帧刷新)
+        mapImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        const zoomLabel = document.getElementById('zoomLevel');
+        if (zoomLabel) zoomLabel.textContent = Math.round(scale * 100) + '%';
+        updateMarkerScales();
+
+        if (progress < 1) {
+            animationFrameId = requestAnimationFrame(step);
+        } else {
+            animationFrameId = null;
+            if (onComplete) onComplete();
+        }
+    }
+
+    animationFrameId = requestAnimationFrame(step);
 }
 
 // Zoom function
