@@ -835,7 +835,9 @@ function updateEditorMarkerScales() {
         const isText = marker.type === 'text';
 
         // 目标屏幕像素尺寸: 与地图等比缩�?
-        const targetSize = EDITOR_MARKER_BASE * markerScale * sizeMul * (editorScale / bs);
+        const targetSize = isText
+            ? EDITOR_MARKER_BASE * markerScale * sizeMul
+            : EDITOR_MARKER_BASE * markerScale * sizeMul * (editorScale / bs);
 
         // 屏幕像素位置
         const screenX = editorTranslateX + marker.x * editorScale;
@@ -3405,4 +3407,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
 

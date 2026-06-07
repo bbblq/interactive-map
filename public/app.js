@@ -329,7 +329,9 @@ function updateMarkerTransforms() {
         const isText = marker.type === 'text';
 
         // 计算目标屏幕像素尺寸: 与地图等比缩放, sizeMul 作为全局倍率
-        const targetSize = MARKER_BASE_SIZE * markerScale * sizeMul * (scale / bs);
+        const targetSize = isText
+            ? MARKER_BASE_SIZE * markerScale * sizeMul
+            : MARKER_BASE_SIZE * markerScale * sizeMul * (scale / bs);
 
         // 屏幕像素位置: mapImage.transform = translate(tx, ty) scale(s)
         // 源坐标 (mx, my) -> 屏幕 (tx + mx*s, ty + my*s)
