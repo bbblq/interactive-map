@@ -24,7 +24,8 @@ function escapeHtml(text) {
 let isDragging = false;
 let startX = 0;
 let startY = 0;
-let selectedCategory = null;
+let hiddenCategories = new Set(); // categories that are hidden
+let expandedCategories = new Set(); // categories with expanded marker lists
 let showMarkers = true; // 标记显示开关
 
 // DOM elements
@@ -382,10 +383,6 @@ function renderMarkers() {
     markersContainer.innerHTML = '';
 
     markers.forEach((marker, index) => {
-        if (selectedCategory && marker.category !== selectedCategory) {
-            return;
-        }
-
         const markerEl = document.createElement('div');
 
         // 不在这里设 left/top/width/height, 全部由 updateMarkerTransforms
@@ -393,7 +390,7 @@ function renderMarkers() {
 
         // 判断是否是文字标记
         if (marker.type === 'text') {
-            markerEl.className = `marker marker-text-only ${marker.category || ''}${!showMarkers ? ' hidden' : ''}`;
+            markerEl.className = `marker marker-text-only ${marker.category || ''}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(marker.category) ? ' category-hidden' : ''}`;
             const content = escapeHtml(marker.content || marker.label);
             // 同步编辑器里设的颜色 (8 位 hex 含 alpha, CSS 原生支持)
             const textColor = marker.textColor || '';
@@ -414,7 +411,7 @@ function renderMarkers() {
             markerEl.innerHTML = `<div class="text-label" style="${colorStyle}">${content}</div>`;
         } else {
             // 图标标记
-            markerEl.className = `marker ${marker.category}${!showMarkers ? ' hidden' : ''}`;
+            markerEl.className = `marker ${marker.category}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(marker.category) ? ' category-hidden' : ''}`;
 
             let iconContent;
             const type = iconTypes[marker.category] || iconTypes.other;
@@ -497,6 +494,9 @@ function renderMarkers() {
     updateMarkerScales();
 }
 
+const EYE_ON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
 // Render categories
 function renderCategories() {
     const categoryCounts = {};
@@ -524,7 +524,8 @@ function renderCategories() {
 
     categoriesContainer.innerHTML = categoriesWithMarkers.map(([key, cat]) => {
         const count = categoryCounts[key] || 0;
-        const isActive = selectedCategory === key;
+        const isHidden = hiddenCategories.has(key);
+        const isExpanded = expandedCategories.has(key);
         let iconHtml;
         if (cat.imageUrl) {
             iconHtml = `<img src="${cat.imageUrl}" style="width: 20px; height: 20px; object-fit: contain;">`;
@@ -535,8 +536,9 @@ function renderCategories() {
 
         return `
         <div class="category">
-          <div class="category-header ${isActive ? 'active' : ''}" onclick="toggleCategory('${key}')" data-category="${key}">
-            <div class="category-title">
+          <div class="category-header ${isHidden ? 'cat-hidden' : ''}" data-category="${key}">
+            <div class="category-left" onclick="toggleCategoryExpand('${key}')">
+              <span class="category-expand-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
               <span class="category-icon-wrapper">
                 <span class="category-icon" style="display: flex; align-items: center; justify-content: center;">${iconHtml}</span>
                 <span class="category-badge">${count}</span>
@@ -544,8 +546,11 @@ function renderCategories() {
               <span class="category-name">${cat.name}</span>
               <span class="category-count-text">${count}</span>
             </div>
+            <button class="category-visibility-btn" onclick="event.stopPropagation(); toggleCategoryVisibility('${key}')" title="${isHidden ? '显示分类' : '隐藏分类'}">
+              ${isHidden ? EYE_OFF_SVG : EYE_ON_SVG}
+            </button>
           </div>
-          <div class="category-items" id="category-${key}">
+          <div class="category-items ${isExpanded ? 'expanded' : ''}" id="category-${key}">
             ${markers.filter(m => m.category === key).map(m => `
               <div class="category-item" onclick="focusMarker('${m.id}')">
                 ${m.label}
@@ -557,20 +562,79 @@ function renderCategories() {
     }).join('');
 }
 
-// Toggle category
-function toggleCategory(category) {
-    selectedCategory = selectedCategory === category ? null : category;
-    renderMarkers();
+// Toggle category visibility (show/hide markers of this category)
+function toggleCategoryVisibility(category) {
+    if (hiddenCategories.has(category)) {
+        hiddenCategories.delete(category);
+    } else {
+        hiddenCategories.add(category);
+    }
+    updateCategoryVisuals();
+    updateMarkerVisibility();
+}
+window.toggleCategoryVisibility = toggleCategoryVisibility;
 
-    // Update visual state of all category headers
-    const allHeaders = document.querySelectorAll('.category-header');
-    allHeaders.forEach(header => {
-        const headerCategory = header.getAttribute('data-category');
-        if (headerCategory === selectedCategory) {
-            header.classList.add('active');
-        } else {
-            header.classList.remove('active');
+// Toggle expand/collapse of category's marker list
+function toggleCategoryExpand(category) {
+    if (expandedCategories.has(category)) {
+        expandedCategories.delete(category);
+    } else {
+        expandedCategories.add(category);
+    }
+    updateCategoryVisuals();
+}
+window.toggleCategoryExpand = toggleCategoryExpand;
+
+function showAllCategories() {
+    hiddenCategories.clear();
+    updateCategoryVisuals();
+    updateMarkerVisibility();
+}
+window.showAllCategories = showAllCategories;
+
+function hideAllCategories() {
+    Object.keys(iconTypes).forEach(key => hiddenCategories.add(key));
+    updateCategoryVisuals();
+    updateMarkerVisibility();
+}
+window.hideAllCategories = hideAllCategories;
+
+// Update visual state of category headers without full re-render
+function updateCategoryVisuals() {
+    document.querySelectorAll('.category').forEach(catEl => {
+        const header = catEl.querySelector('.category-header');
+        const key = header?.getAttribute('data-category');
+        if (!key) return;
+
+        const isHidden = hiddenCategories.has(key);
+        const isExpanded = expandedCategories.has(key);
+
+        header.classList.toggle('cat-hidden', isHidden);
+
+        const arrow = header.querySelector('.category-expand-arrow');
+        if (arrow) {
+            arrow.classList.toggle('expanded', isExpanded);
         }
+
+        const items = catEl.querySelector('.category-items');
+        if (items) {
+            items.classList.toggle('expanded', isExpanded);
+        }
+
+        const eyeBtn = header.querySelector('.category-visibility-btn');
+        if (eyeBtn) {
+            eyeBtn.innerHTML = isHidden ? EYE_OFF_SVG : EYE_ON_SVG;
+            eyeBtn.title = isHidden ? '显示分类' : '隐藏分类';
+        }
+    });
+}
+
+// Update marker visibility without full re-render (just toggle class)
+function updateMarkerVisibility() {
+    markers.forEach(marker => {
+        const markerEl = markersContainer.querySelector(`.marker[data-marker-id="${CSS.escape(marker.id)}"]`);
+        if (!markerEl) return;
+        markerEl.classList.toggle('category-hidden', hiddenCategories.has(marker.category));
     });
 }
 

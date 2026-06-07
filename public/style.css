@@ -603,13 +603,19 @@ body {
 }
 
 .category-items {
-  padding-left: 10px;
   display: none;
 }
 
 .sidebar.expanded .category-items {
   display: block;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
   padding-left: 15px;
+}
+
+.sidebar.expanded .category-items.expanded {
+  max-height: 1000px;
 }
 
 .category-item {
@@ -1044,4 +1050,109 @@ body {
   .toggle-sidebar {
     display: block;
   }
+}
+
+/* Category Actions Bar */
+.category-actions {
+  display: none;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sidebar.expanded .category-actions {
+  display: flex;
+}
+
+.cat-action-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.cat-action-btn:hover {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+/* Category header redesign */
+.category-header .category-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.category-expand-arrow {
+  display: none;
+  font-size: 10px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.sidebar.expanded .category-expand-arrow {
+  display: inline-block;
+}
+
+.category-expand-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+/* Eye toggle button */
+.category-visibility-btn {
+  display: none;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--primary-color);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.sidebar.expanded .category-visibility-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.category-visibility-btn:hover {
+  background: rgba(74, 144, 226, 0.1);
+}
+
+/* Hidden category state */
+.category-header.cat-hidden {
+  opacity: 0.45;
+}
+
+.category-header.cat-hidden .category-icon-wrapper,
+.category-header.cat-hidden .category-name,
+.category-header.cat-hidden .category-count-text {
+  filter: grayscale(1);
+}
+
+.category-header.cat-hidden .category-visibility-btn {
+  color: var(--text-secondary);
+}
+
+/* Marker hidden by category filter - fade instead of removing */
+.marker.category-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
 }
