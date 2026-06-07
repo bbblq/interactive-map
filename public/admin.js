@@ -112,18 +112,18 @@ const SVG_ICONS = {
 
 // Default Icon Types Configuration
 const DEFAULT_ICON_TYPES = {
-    printer: { name: '打印�?, icon: 'printer', color: '#7b68ee' },
-    shredder: { name: '碎纸�?, icon: 'shredder', color: '#ff6b6b' },
+    printer: { name: '打印机', icon: 'printer', color: '#7b68ee' },
+    shredder: { name: '碎纸机', icon: 'shredder', color: '#ff6b6b' },
     tv: { name: '电视', icon: 'tv', color: '#4a90e2' },
-    screen: { name: '大屏�?, icon: 'screen', color: '#00bcd4' },
+    screen: { name: '大屏幕', icon: 'screen', color: '#00bcd4' },
     server: { name: '机房', icon: 'server', color: '#9c27b0' },
-    console: { name: '控制�?, icon: 'console', color: '#ff9800' },
-    icemaker: { name: '制冰�?, icon: 'icemaker', color: '#03a9f4' },
-    water: { name: '饮水�?, icon: 'water', color: '#00bcd4' },
-    coffee: { name: '咖啡�?, icon: 'coffee', color: '#795548' },
-    snacks: { name: '零食�?, icon: 'snacks', color: '#ffa726' },
+    console: { name: '控制台', icon: 'console', color: '#ff9800' },
+    icemaker: { name: '制冰机', icon: 'icemaker', color: '#03a9f4' },
+    water: { name: '饮水机', icon: 'water', color: '#00bcd4' },
+    coffee: { name: '咖啡机', icon: 'coffee', color: '#795548' },
+    snacks: { name: '零食台', icon: 'snacks', color: '#ffa726' },
     person: { name: '人员', icon: 'person', color: '#4a90e2' },
-    meeting: { name: '会议�?, icon: 'meeting', color: '#ff6b6b' },
+    meeting: { name: '会议室', icon: 'meeting', color: '#ff6b6b' },
     other: { name: '其他', icon: 'other', color: '#9e9e9e' }
 };
 
@@ -139,7 +139,7 @@ async function loadBackupInfo() {
 
         document.getElementById('backupVersion').textContent = info.version || '-';
         document.getElementById('markerCount').textContent = info.markerCount || '0';
-        document.getElementById('mapStatus').textContent = info.dataFiles.map ? '已上�? : '未上�?;
+        document.getElementById('mapStatus').textContent = info.dataFiles.map ? '已上传' : '未上传';
     } catch (error) {
         console.error('Failed to load backup info:', error);
     }
@@ -151,7 +151,7 @@ async function exportBackup() {
     const status = document.getElementById('exportStatus');
 
     btn.disabled = true;
-    btn.textContent = '导出�?..';
+    btn.textContent = '导出中...';
     status.textContent = '';
     status.className = 'status-message';
 
@@ -177,11 +177,11 @@ async function exportBackup() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
-        status.textContent = '�?配置已成功导�?';
+        status.textContent = '✓ 配置已成功导出!';
         status.className = 'status-message success';
     } catch (error) {
         console.error('Export failed:', error);
-        status.textContent = '�?导出失败: ' + error.message;
+        status.textContent = '✗ 导出失败: ' + error.message;
         status.className = 'status-message error';
     } finally {
         btn.disabled = false;
@@ -218,7 +218,7 @@ async function importBackup() {
     }
 
     // Confirm import
-    if (!confirm('导入配置将覆盖当前所有数据。\n\n系统会自动备份当前配�?确定要继续吗?')) {
+    if (!confirm('导入配置将覆盖当前所有数据。\n\n系统会自动备份当前配置,确定要继续吗?')) {
         return;
     }
 
@@ -226,7 +226,7 @@ async function importBackup() {
     const status = document.getElementById('importStatus');
 
     btn.disabled = true;
-    btn.textContent = '导入�?..';
+    btn.textContent = '导入中...';
     status.textContent = '';
     status.className = 'status-message';
 
@@ -251,14 +251,14 @@ async function importBackup() {
         }
 
         // Show success message
-        let message = `�?配置已成功导�?\n\n`;
-        message += `恢复的项�?\n`;
+        let message = `✓ 配置已成功导入!\n\n`;
+        message += `恢复的项目:\n`;
         message += `- 标记: ${result.itemsRestored.markers} 个\n`;
         message += `- 分类: ${result.itemsRestored.categories} 个\n`;
         message += `- 图标类型: ${result.itemsRestored.iconTypes} 个\n`;
-        message += `- 地图: ${result.itemsRestored.mapImage ? '已恢�? : '�?}\n`;
+        message += `- 地图: ${result.itemsRestored.mapImage ? '已恢复' : '无'}\n`;
         if (result.autoBackupPath) {
-            message += `\n旧配置已自动备份�? ${result.autoBackupPath}`;
+            message += `\n旧配置已自动备份到: ${result.autoBackupPath}`;
         }
 
         status.textContent = message;
@@ -273,16 +273,16 @@ async function importBackup() {
             await loadIconTypes();
             await loadBackupInfo();
 
-            alert('配置导入成功!页面数据已刷新�?);
+            alert('配置导入成功!页面数据已刷新。');
         }, 2000);
 
     } catch (error) {
         console.error('Import failed:', error);
-        status.textContent = '�?导入失败: ' + error.message;
+        status.textContent = '✗ 导入失败: ' + error.message;
         status.className = 'status-message error';
     } finally {
         btn.disabled = false;
-        btn.textContent = '⬆️ 导入并恢�?;
+        btn.textContent = '⬆️ 导入并恢复';
         fileInput.value = '';
         document.getElementById('importFileName').textContent = '';
         btn.style.display = 'none';
@@ -356,13 +356,13 @@ async function login() {
 
     const password = passwordInput.value;
     if (!password) {
-        loginError.textContent = '请输入密�?;
+        loginError.textContent = '请输入密码';
         return;
     }
 
     // Show loading state
     loginBtn.disabled = true;
-    loginBtn.textContent = '登录�?..';
+    loginBtn.textContent = '登录中...';
     loginError.textContent = '';
 
     try {
@@ -379,11 +379,11 @@ async function login() {
         if (response.ok && data.success) {
             showAdminPanel();
         } else {
-            loginError.textContent = data.error || '密码错误,请重�?;
+            loginError.textContent = data.error || '密码错误,请重试';
             passwordInput.value = '';
         }
     } catch (error) {
-        loginError.textContent = '登录失败,请重�?;
+        loginError.textContent = '登录失败,请重试';
         console.error('Login error:', error);
     } finally {
         loginBtn.disabled = false;
@@ -413,7 +413,7 @@ async function showAdminPanel() {
     adminPanel.style.display = 'block';
     isAuthenticated = true;
 
-    // 先加�?iconTypes，确保渲染列表时图标可用
+    // 先加载 iconTypes
     await loadIconTypes();
     await loadMap();
     await loadMarkers();
@@ -565,14 +565,14 @@ function setupAdminListeners() {
     setupRotationFieldListener();
     setupZIndexButtons();
 
-    // 颜色选择�? �?alpha 滑块和百分比标签绑在一�?
+    // 颜色选择�? �?alpha 滑块和百分比标签绑在一�?
     setupColorPicker('textColor', 'textColorAlpha', 'textColorAlphaLabel');
     setupColorPicker('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel');
     setupColorPicker('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel');
 
-    // 弹窗占据焦点, 不再因点�?backdrop 关闭, 避免误操作丢失未保存内容.
-    // 如需关闭请使用右上角 X 按钮或底部取�?保存按钮.
-    // markerFormModal 上的 mousedown 阻止冒泡�?backdrop, 防止拖拽选择文本时误�?
+    // 弹窗占据焦点, 不再因点�?backdrop 关闭, 避免误操作丢失未保存内容.
+    // 如需关闭请使用右上角 X 按钮或底部取�?保存按钮.
+    // markerFormModal 上的 mousedown 阻止冒泡�?backdrop, 防止拖拽选择文本时误�?
     markerFormModal.addEventListener('mousedown', (e) => {
         if (e.target === markerFormModal) {
             e.stopPropagation();
@@ -614,7 +614,7 @@ function setupTabNavigation() {
             document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
             document.getElementById(tab + 'Tab').classList.add('active');
 
-            // 如果切换到标记管理标签，强制重新加载和居中地�?
+            // 如果切换到标记管理标签，强制重新加载和居中地�?
             if (tab === 'markers') {
                 setTimeout(() => {
                     if (editorMapImg.src && editorMapImg.naturalWidth > 0) {
@@ -638,7 +638,7 @@ async function loadMap() {
             const preview = document.getElementById('currentMapPreview');
             preview.innerHTML = `<img src="${mapData.imageUrl}" alt="当前地图">`;
 
-            // Update editor - 添加时间戳防止缓�?
+            // Update editor - 添加时间戳防止缓�?
             editorMapImg.src = mapData.imageUrl + '?t=' + Date.now();
             editorMapImg.style.display = 'block';
             editorEmptyState.style.display = 'none';
@@ -652,7 +652,7 @@ async function loadMap() {
                 }, 100);
             };
 
-            // 如果图片已经缓存，立即触�?
+            // 如果图片已经缓存，立即触�?
             if (editorMapImg.complete) {
                 setTimeout(() => {
                     centerEditorMap();
@@ -676,7 +676,7 @@ async function uploadMap() {
     formData.append('map', file);
 
     const progressDiv = document.getElementById('uploadProgress');
-    progressDiv.textContent = '上传�?..';
+    progressDiv.textContent = '上传中...';
 
     try {
         const response = await fetch('/api/map/upload', {
@@ -688,7 +688,7 @@ async function uploadMap() {
         const data = await response.json();
 
         if (response.ok) {
-            progressDiv.textContent = '�?上传成功�?;
+            progressDiv.textContent = '✓ 上传成功！';
             setTimeout(() => {
                 progressDiv.textContent = '';
                 document.getElementById('fileName').textContent = '';
@@ -698,10 +698,10 @@ async function uploadMap() {
 
             await loadMap();
         } else {
-            progressDiv.textContent = '�?上传失败: ' + data.error;
+            progressDiv.textContent = '✗ 上传失败: ' + data.error;
         }
     } catch (error) {
-        progressDiv.textContent = '�?上传失败: ' + error.message;
+        progressDiv.textContent = '✗ 上传失败: ' + error.message;
     }
 }
 
@@ -760,16 +760,16 @@ function scheduleEditorTransform() {
         if (zoomLabel) zoomLabel.textContent = Math.round(editorScale * 100) + '%';
         editorMapWrapper.style.setProperty('--editor-scale', editorScale);
         updateEditorMarkerScales();
-        // 标记位置/尺寸变了, 选中框必须同步跟�? 否则会有"滞后"
+        // 标记位置/尺寸变了, 选中框必须同步跟�? 否则会有"滞后"
         syncSelectionBoxToSelected();
     });
 }
 
-// 同步选中�?(�?8 个调整手�?+ 1 个旋转把�? 到当前选中标记的屏幕位�?
-// 位置�?AABB 中心 (旋转也是绕中�? AABB 中心 = 标记几何中心, �?text/icon 都对):
+// 同步选中�?(�?8 个调整手�?+ 1 个旋转把�? 到当前选中标记的屏幕位�?
+// 位置�?AABB 中心 (旋转也是绕中�? AABB 中心 = 标记几何中心, �?text/icon 都对):
 //   - 文字标记 transform=translate(-50%,-50%)    锚点=中心  -> AABB 中心 = 锚点 = 标记中心
-//   - 图标标记 transform=translate(-50%,-100%)   锚点=底中  -> AABB 中心 �?锚点, 必须在中�?
-// 尺寸�?offsetWidth/Height (未旋�?, 不用 AABB 尺寸, 否则旋转�?AABB 比标记大一�?
+//   - 图标标记 transform=translate(-50%,-100%)   锚点=底中  -> AABB 中心 �?锚点, 必须在中�?
+// 尺寸�?offsetWidth/Height (未旋�?, 不用 AABB 尺寸, 否则旋转�?AABB 比标记大一�?
 function syncSelectionBoxToSelected() {
     if (!selectionBox || !selectedMarkerId) return;
     const markerEl = editorMarkersContainer.querySelector(`.marker[data-id="${CSS.escape(selectedMarkerId)}"]`);
@@ -782,14 +782,14 @@ function syncSelectionBoxToSelected() {
     const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
     const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
 
-    // 尺寸: offsetWidth/Height (未旋�?
+    // 尺寸: offsetWidth/Height (未旋�?
     const width = markerEl.offsetWidth;
     const height = markerEl.offsetHeight;
 
     const left = centerX - width / 2;
     const top = centerY - height / 2;
 
-    // box 也跟着旋转, 让手柄出现在标记的视觉角�?
+    // box 也跟着旋转, 让手柄出现在标记的视觉角�?
     const marker = markers.find(m => m.id === selectedMarkerId);
     const rotation = (marker && marker.rotation) || 0;
 
@@ -800,7 +800,7 @@ function syncSelectionBoxToSelected() {
     selectionBox.style.transform = `rotate(${rotation}deg)`;
     selectionBox.style.transformOrigin = 'center center';
 
-    // 调整手柄尺寸也按新尺寸重�?
+    // 调整手柄尺寸也按新尺寸重�?
     const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
     selectionBox.querySelectorAll('.resize-handle').forEach(handle => {
         handle.style.width = baseHandleSize + 'px';
@@ -815,7 +815,7 @@ function updateEditorTransform() {
 }
 
 // 标记按目标屏幕像素尺寸直接栅格化 (不走 transform: scale), 保证矢量清晰.
-//   editorScale >= 阈�?            -> �?marker 自身 scale, 目标像素 = BASE * markerScale * editorScale
+//   editorScale >= 阈�?            -> �?marker 自身 scale, 目标像素 = BASE * markerScale * editorScale
 const EDITOR_MARKER_BASE = 32;
 const EDITOR_MARKER_FONT = 13;
 
@@ -834,7 +834,7 @@ function updateEditorMarkerScales() {
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
 
-        // 目标屏幕像素尺寸: 与地图等比缩�?
+        // 目标屏幕像素尺寸: 与地图等比缩�?
         const targetSize = isText
             ? EDITOR_MARKER_BASE * markerScale * sizeMul
             : EDITOR_MARKER_BASE * markerScale * sizeMul * (editorScale / bs);
@@ -846,10 +846,10 @@ function updateEditorMarkerScales() {
         markerEl.style.top = screenY + 'px';
 
         if (isText) {
-            // 文字标记: 跟图标标记完全同�? 边长 = targetSize, 文字 = 13 * targetSize / 32.
-            // 之前依赖 style.width/height 算字�? �?marker.scale 脱钩, 拖框时字体不�?
-            // 现在 box �?font 全部�?targetSize 派生, �?marker.scale / map zoom / 用户拖框
-            // 一起联�? 没有 36px 封顶, 想多大就多大.
+            // 文字标记: 跟图标标记完全同�? 边长 = targetSize, 文字 = 13 * targetSize / 32.
+            // 之前依赖 style.width/height 算字�? �?marker.scale 脱钩, 拖框时字体不�?
+            // 现在 box �?font 全部�?targetSize 派生, �?marker.scale / map zoom / 用户拖框
+            // 一起联�? 没有 36px 封顶, 想多大就多大.
             const boxSize = targetSize;
             const textWidth = boxSize * 1.5;
             markerEl.style.width = textWidth + 'px';
@@ -876,7 +876,7 @@ function updateEditorMarkerScales() {
     }
 }
 
-// 保留旧函数名以兼容其他调�?
+// 保留旧函数名以兼容其他调�?
 function updateEditorMarkerPositions() {
     updateEditorMarkerScales();
 }
@@ -926,7 +926,7 @@ function toggleAddMarkerMode() {
     isAddingMarker = !isAddingMarker;
 
     if (isAddingMarker) {
-        addMarkerBtn.textContent = '�?取消添加';
+        addMarkerBtn.textContent = '�?取消添加';
         addMarkerBtn.classList.remove('btn-primary');
         addMarkerBtn.classList.add('btn-secondary');
         addMarkerHint.style.display = 'inline';
@@ -935,10 +935,10 @@ function toggleAddMarkerMode() {
         // 禁用地图拖动
         editorMapWrapper.removeEventListener('mousedown', startEditorDrag);
 
-        // 在地图中心创建一个可拖动的临时标�?
+        // 在地图中心创建一个可拖动的临时标�?
         createTemporaryMarker();
     } else {
-        addMarkerBtn.textContent = '�?添加标记';
+        addMarkerBtn.textContent = '�?添加标记';
         addMarkerBtn.classList.remove('btn-secondary');
         addMarkerBtn.classList.add('btn-primary');
         addMarkerHint.style.display = 'none';
@@ -964,7 +964,7 @@ function createTemporaryMarker() {
     const containerWidth = editorMapWrapper.offsetWidth;
     const containerHeight = editorMapWrapper.offsetHeight;
 
-    // 转换为图片坐�?
+    // 转换为图片坐�?
     tempMarkerX = (containerWidth / 2 - editorTranslateX) / editorScale;
     tempMarkerY = (containerHeight / 2 - editorTranslateY) / editorScale;
 
@@ -987,7 +987,7 @@ function createTemporaryMarker() {
     // 创建确认按钮
     confirmMarkerBtn = document.createElement('button');
     confirmMarkerBtn.className = 'btn btn-primary confirm-marker-btn';
-    confirmMarkerBtn.innerHTML = '�?确认位置';
+    confirmMarkerBtn.innerHTML = '�?确认位置';
     confirmMarkerBtn.style.position = 'fixed';
     confirmMarkerBtn.style.bottom = '40px';
     confirmMarkerBtn.style.left = '50%';
@@ -1006,17 +1006,17 @@ function createTemporaryMarker() {
 function updateTempMarkerPosition() {
     if (!tempMarker) return;
 
-    // 屏幕像素坐标 (�?editorMarkers 同一图层), 矢量清晰
+    // 屏幕像素坐标 (�?editorMarkers 同一图层), 矢量清晰
     const screenX = editorTranslateX + tempMarkerX * editorScale;
     const screenY = editorTranslateY + tempMarkerY * editorScale;
     tempMarker.style.left = screenX + 'px';
     tempMarker.style.top = screenY + 'px';
 
-    // 目标屏幕像素尺寸 (与其他标记一�?
+    // 目标屏幕像素尺寸 (与其他标记一�?
     const sizeMul = globalMarkerSizeMultiplier || 1.0;
     const bs = editorBaseScale || 1;
     const targetSize = EDITOR_MARKER_BASE * sizeMul * (editorScale / bs);
-    // temp marker �?icon part 尺寸
+    // temp marker �?icon part 尺寸
     const iconPart = tempMarker.querySelector('.marker-icon-part');
     if (iconPart) {
         iconPart.style.width = targetSize + 'px';
@@ -1041,7 +1041,7 @@ function dragTempMarker(e) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // 转换为图片坐�?
+    // 转换为图片坐�?
     tempMarkerX = (x - editorTranslateX) / editorScale;
     tempMarkerY = (y - editorTranslateY) / editorScale;
 
@@ -1081,7 +1081,7 @@ function removeTemporaryMarker() {
 
 // Handle map click - 保留但不使用
 function handleMapClick(e) {
-    // 不再使用点击添加，改为拖动添�?
+    // 不再使用点击添加，改为拖动添�?
     return;
 }
 
@@ -1092,12 +1092,12 @@ function renderEditorMarkers() {
     markers.forEach((marker) => {
         const markerEl = document.createElement('div');
 
-        // 不在这里�?left/top/width/height, 全部�?updateEditorMarkerScales
+        // 不在这里�?left/top/width/height, 全部�?updateEditorMarkerScales
         // 在屏幕像素坐标下重新计算, 保证 SVG/文字按最终屏幕像素栅格化, 矢量清晰
 
         markerEl.dataset.id = marker.id;
         markerEl.style.transform = 'translate(-50%, -50%)';
-        // 层级 (Z-Order): 大数字覆盖在上面, 解决大标记挡住小标记的问�?
+        // 层级 (Z-Order): 大数字覆盖在上面, 解决大标记挡住小标记的问�?
         markerEl.style.zIndex = parseInt(marker.zIndex, 10) || 0;
 
         // 判断标记类型
@@ -1107,8 +1107,8 @@ function renderEditorMarkers() {
             // 文字标记
             markerEl.className = 'marker marker-text-only';
             // 关键: text-label 必须显式 width/height: 100% + flex 居中, 不然 text-label
-            // 收缩到内容固有大�? �?marker 不同�?-> 标记�?offsetWidth/Height 反映的是
-            // text-label 的实际渲染尺�? 选择框就跑偏�?
+            // 收缩到内容固有大�? �?marker 不同�?-> 标记�?offsetWidth/Height 反映的是
+            // text-label 的实际渲染尺�? 选择框就跑偏�?
             const textStyle = `
                 color: ${marker.textColor || '#333333'};
                 background: ${marker.bgColor || '#ffffff'};
@@ -1176,7 +1176,7 @@ function renderEditorMarkers() {
                 </div>
             `;
 
-            // 如果都不显示，显示占�?
+            // 如果都不显示，显示占�?
             if (!showIcon && !showLabel && !marker.label) {
                 markerEl.innerHTML = `<div class="marker-icon"><div class="marker-icon-inner">📍</div></div>`;
             }
@@ -1184,7 +1184,7 @@ function renderEditorMarkers() {
 
         // 添加点击事件，用于选中标记
         markerEl.addEventListener('mousedown', (e) => {
-            // 如果点击的是标记本身（不是调整手柄），选中�?
+            // 如果点击的是标记本身（不是调整手柄），选中�?
             if (!e.target.classList.contains('resize-handle')) {
                 e.stopPropagation();
                 selectMarker(marker.id, e);
@@ -1196,7 +1196,7 @@ function renderEditorMarkers() {
 
     updateEditorMarkerScales();
 
-    // 如果当前有选中的标记，恢复其列表中的选中状�?
+    // 如果当前有选中的标记，恢复其列表中的选中状�?
     if (selectedMarkerId) {
         const item = document.querySelector(`.marker-item[data-id="${selectedMarkerId}"]`);
         if (item) {
@@ -1214,10 +1214,10 @@ function renderMarkersList() {
     }
 
     markersList.innerHTML = markers.map(marker => {
-        // 文字标记�?content, 图标标记�?label, 都为空时退到一个占位符, 避免显示 "undefined"
+        // 文字标记�?content, 图标标记�?label, 都为空时退到一个占位符, 避免显示 "undefined"
         const displayName = (marker.type === 'text')
-            ? (marker.content || marker.label || '(未命名文�?')
-            : (marker.label || '(未命�?');
+            ? (marker.content || marker.label || '(未命名文�?')
+            : (marker.label || '(未命�?');
         return `
     <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}"
          data-id="${marker.id}"
@@ -1232,7 +1232,7 @@ function renderMarkersList() {
         <div class="marker-item-actions">
           <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
           <button class="icon-btn" onclick="event.stopPropagation(); editMarker('${marker.id}')" title="编辑">✏️</button>
-          <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑�?/button>
+          <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑�?/button>
         </div>
       </div>
       ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
@@ -1243,14 +1243,14 @@ function renderMarkersList() {
 
 // 从列表选中标记
 function selectMarkerFromList(markerId) {
-    // 已经在地图上选中了，这里只需要调�?selectMarker
+    // 已经在地图上选中了，这里只需要调�?selectMarker
     const markerEl = document.querySelector(`.marker[data-id="${markerId}"]`);
     if (markerEl) {
         selectMarker(markerId, null);
     }
 }
 
-// 处理列表项键盘事�?
+// 处理列表项键盘事�?
 function handleMarkerListKeydown(event, markerId) {
     if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
@@ -1278,11 +1278,11 @@ function getMarkerIcon(category) {
     return `<div style="color: ${color}; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">${svg}</div>`;
 }
 
-// 颜色辅助: 数据里用 8 �?hex (#RRGGBBAA) 同时�?RGB �?alpha,
-// 浏览�?CSS 原生支持 8 �?hex, 渲染时不用再�?rgba. 表单的原�?color picker
-// 只支�?6 �?hex, 所以拆�?"6 �?hex + 0-100 alpha 滑块" 两部�? 用这两个函数互转.
+// 颜色辅助: 数据里用 8 �?hex (#RRGGBBAA) 同时�?RGB �?alpha,
+// 浏览�?CSS 原生支持 8 �?hex, 渲染时不用再�?rgba. 表单的原�?color picker
+// 只支�?6 �?hex, 所以拆�?"6 �?hex + 0-100 alpha 滑块" 两部�? 用这两个函数互转.
 
-// �?8 �?hex 拆成 6 �?hex + 0-100 �?alpha (整数百分�?. 兼容 6/7 位历史数�?
+// �?8 �?hex 拆成 6 �?hex + 0-100 �?alpha (整数百分�?. 兼容 6/7 位历史数�?
 function splitHexAlpha(hex) {
     if (!hex || typeof hex !== 'string') return { hex: '#000000', alpha: 100 };
     if (hex.length === 9) {
@@ -1292,7 +1292,7 @@ function splitHexAlpha(hex) {
     return { hex: hex, alpha: 100 };
 }
 
-// �?6 �?hex + 0-100 alpha 合成 8 �?hex (#RRGGBBAA). alpha=100 时直接返�?6 �?+ ff.
+// �?6 �?hex + 0-100 alpha 合成 8 �?hex (#RRGGBBAA). alpha=100 时直接返�?6 �?+ ff.
 function combineHexAlpha(hex, alphaPct) {
     if (!hex || typeof hex !== 'string') return '#000000ff';
     const h6 = (hex.length === 9) ? hex.slice(0, 7) : hex;
@@ -1303,7 +1303,7 @@ function combineHexAlpha(hex, alphaPct) {
     return h6 + aHex;
 }
 
-// 把表单里�?alpha 滑块和百分比标签绑在一�? 滑块拖动时标签跟着更新.
+// 把表单里�?alpha 滑块和百分比标签绑在一�? 滑块拖动时标签跟着更新.
 function setupColorPicker(colorId, alphaId, labelId) {
     const alphaEl = document.getElementById(alphaId);
     const labelEl = document.getElementById(labelId);
@@ -1316,7 +1316,7 @@ function setupColorPicker(colorId, alphaId, labelId) {
     updateLabel();
 }
 
-// �?marker �?8 �?hex 写入表单 (6 �?-> 原生 picker, alpha -> 滑块 + 标签).
+// �?marker �?8 �?hex 写入表单 (6 �?-> 原生 picker, alpha -> 滑块 + 标签).
 function setColorPickerValue(colorId, alphaId, labelId, hex) {
     const { hex: h6, alpha } = splitHexAlpha(hex);
     const colorEl = document.getElementById(colorId);
@@ -1327,7 +1327,7 @@ function setColorPickerValue(colorId, alphaId, labelId, hex) {
     if (labelEl) labelEl.textContent = alpha;
 }
 
-// 从表单读�?8 �?hex.
+// 从表单读�?8 �?hex.
 function getColorPickerValue(colorId, alphaId) {
     const colorEl = document.getElementById(colorId);
     const alphaEl = document.getElementById(alphaId);
@@ -1353,7 +1353,7 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
         // 确定标记类型（向后兼容）
         const markerType = marker.type || 'icon';
 
-        // 设置类型单选按�?
+        // 设置类型单选按�?
         document.querySelector(`input[name="markerType"][value="${markerType}"]`).checked = true;
 
         if (markerType === 'text') {
@@ -1376,7 +1376,7 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
             document.getElementById('markerDepartment').value = marker.department || '';
             document.getElementById('markerPhone').value = marker.phone || '';
             document.getElementById('markerEmail').value = marker.email || '';
-            // 详情(富文�?在图�?文字两种类型下共�?#textDetails 编辑�? 都需要回�?
+            // 详情(富文�?在图�?文字两种类型下共�?#textDetails 编辑�? 都需要回�?
             document.getElementById('textDetails').innerHTML = marker.details || '';
         }
 
@@ -1388,11 +1388,11 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
         // 触发类型切换以显示正确的表单部分
         handleMarkerTypeChange({ target: { value: markerType } });
     } else {
-        // 添加新标�?
+        // 添加新标�?
         markerFormTitle.textContent = '添加标记';
         markerForm.reset();
-        // 显式清空富文本编辑器, markerForm.reset() 不会�?contenteditable 元素,
-        // 否则上一个标记的详情会被带入新标�?
+        // 显式清空富文本编辑器, markerForm.reset() 不会�?contenteditable 元素,
+        // 否则上一个标记的详情会被带入新标�?
         document.getElementById('textDetails').innerHTML = '';
         document.getElementById('markerId').value = '';
         document.getElementById('markerX').value = x;
@@ -1404,7 +1404,7 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
         // 设置默认类型
         document.querySelector(`input[name="markerType"][value="${defaultType}"]`).checked = true;
 
-        // 设置默认�?
+        // 设置默认�?
         document.getElementById('fontSize').value = 14;
         setColorPickerValue('textColor', 'textColorAlpha', 'textColorAlphaLabel', '#333333');
         setColorPickerValue('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel', '#ffffff');
@@ -1461,7 +1461,7 @@ async function saveMarker(e) {
             ...baseData,
             content: document.getElementById('textContent').value,
             fontSize: parseInt(document.getElementById('fontSize').value),
-            // 6 �?hex + alpha 滑块 -> 8 �?hex (CSS 原生支持), 渲染不用再转 rgba
+            // 6 �?hex + alpha 滑块 -> 8 �?hex (CSS 原生支持), 渲染不用再转 rgba
             textColor: getColorPickerValue('textColor', 'textColorAlpha'),
             bgColor: getColorPickerValue('bgColor', 'bgColorAlpha'),
             borderColor: getColorPickerValue('borderColor', 'borderColorAlpha'),
@@ -1480,7 +1480,7 @@ async function saveMarker(e) {
             department: document.getElementById('markerDepartment').value,
             phone: document.getElementById('markerPhone').value,
             email: document.getElementById('markerEmail').value,
-            // 详情(富文�?与文字标记共�?#textDetails 编辑�? 必须一起保�?
+            // 详情(富文�?与文字标记共�?#textDetails 编辑�? 必须一起保�?
             details: document.getElementById('textDetails').innerHTML
         };
     }
@@ -1514,7 +1514,7 @@ async function saveMarker(e) {
                 console.error('Save failed:', errData);
                 alert(`保存失败: ${errData.error || errData.message || '未知错误'} (${response.status})`);
             } catch (e) {
-                alert(`保存失败: 服务器返回错�?status ${response.status}`);
+                alert(`保存失败: 服务器返回错误 status ${response.status}`);
             }
         }
     } catch (error) {
@@ -1533,7 +1533,7 @@ window.editMarker = function (markerId) {
 
 // Delete marker (global function for onclick)
 window.deleteMarker = async function (markerId) {
-    if (!confirm('确定要删除这个标记吗�?)) return;
+    if (!confirm('确定要删除这个标记吗？')) return;
 
     try {
         const response = await fetch(`/api/markers/${markerId}`, {
@@ -1558,12 +1558,12 @@ window.deleteMarker = async function (markerId) {
 window.copyMarker = function (markerId) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) {
-        showToast('标记不存�?, 'error');
+        showToast('标记不存在', 'error');
         return;
     }
 
     // Deep copy marker data, excluding unique fields (id, x, y)
-    // 保留所有视�?样式属�? 包括 rotation (旋转角度)
+    // 保留所有视�?样式属�? 包括 rotation (旋转角度)
     copiedMarkerData = {
         type: marker.type,
         category: marker.category,
@@ -1587,13 +1587,13 @@ window.copyMarker = function (markerId) {
     };
 
     hasCopiedData = true;
-    showToast('�?标记已复�?);
+    showToast('📋 标记已复制');
 
     // Update paste button visibility if form is open
     updatePasteButtonVisibility();
 };
 
-// Paste marker data到表�?(global function for onclick)
+// Paste marker data到表�?(global function for onclick)
 window.pasteMarkerData = function () {
     if (!copiedMarkerData) {
         showToast('没有可粘贴的数据', 'error');
@@ -1631,19 +1631,19 @@ window.pasteMarkerData = function () {
         if (copiedMarkerData.department) document.getElementById('markerDepartment').value = copiedMarkerData.department;
         if (copiedMarkerData.phone) document.getElementById('markerPhone').value = copiedMarkerData.phone;
         if (copiedMarkerData.email) document.getElementById('markerEmail').value = copiedMarkerData.email;
-        // 粘贴详情(富文�?, 与文字标记共用编辑器
+        // 粘贴详情(富文�?, 与文字标记共用编辑器
         if (copiedMarkerData.details) document.getElementById('textDetails').innerHTML = copiedMarkerData.details;
     }
 
     // Paste common fields
     if (copiedMarkerData.showDetails !== undefined) document.getElementById('showDetails').checked = copiedMarkerData.showDetails;
     if (copiedMarkerData.scale) document.getElementById('markerScale').value = copiedMarkerData.scale;
-    // 旋转角度: 不管 0 还是其他值都�? 否则新标记的旋转属性丢�?
+    // 旋转角度: 不管 0 还是其他值都�? 否则新标记的旋转属性丢�?
     document.getElementById('markerRotation').value = Math.round(copiedMarkerData.rotation || 0);
-    // 层级: 同上, 0 也得�?
+    // 层级: 同上, 0 也得�?
     document.getElementById('markerZIndex').value = parseInt(copiedMarkerData.zIndex, 10) || 0;
 
-    showToast('�?数据已粘�?);
+    showToast('📋 数据已粘贴');
 };
 
 // Paste marker directly to map at specified coordinates
@@ -1671,7 +1671,7 @@ async function pasteMarkerToMap(x, y) {
             const newMarker = await response.json();
             selectedMarkerId = newMarker.id; // 选中新粘贴的标记
             await loadMarkers();
-            showToast('�?标记已粘贴到地图');
+            showToast('📋 标记已粘贴到地图');
         } else {
             const errData = await response.json();
             showToast(`粘贴失败: ${errData.error || '未知错误'}`, 'error');
@@ -1730,11 +1730,11 @@ function showContextMenu(e) {
     const clientX = e.clientX - rect.left;
     const clientY = e.clientY - rect.top;
 
-    // 转换为地图坐�?
+    // 转换为地图坐�?
     contextMenuX = (clientX - editorTranslateX) / editorScale;
     contextMenuY = (clientY - editorTranslateY) / editorScale;
 
-    // 检查是否点击在标记�?
+    // 检查是否点击在标记�?
     const clickedElement = e.target;
     const markerElement = clickedElement.closest('.marker');
 
@@ -1833,7 +1833,7 @@ function handleMarkerTypeChange(e) {
         textSettings.style.display = 'block';
         iconSettings.style.display = 'none';
         iconExtraInfo.style.display = 'none';
-        // 文字标记的必填字�?
+        // 文字标记的必填字�?
         document.getElementById('textContent').required = true;
         document.getElementById('iconCategory').required = false;
         document.getElementById('iconLabel').required = false;
@@ -1841,7 +1841,7 @@ function handleMarkerTypeChange(e) {
         textSettings.style.display = 'none';
         iconSettings.style.display = 'block';
         iconExtraInfo.style.display = 'block';
-        // 图标标记的必填字�?
+        // 图标标记的必填字�?
         document.getElementById('textContent').required = false;
         document.getElementById('iconCategory').required = true;
         document.getElementById('iconLabel').required = true;
@@ -1868,10 +1868,10 @@ function selectMarker(markerId, event) {
     const marker = markers.find(m => m.id === markerId);
     if (!marker) return;
 
-    // 移除之前的地图选中状�?
+    // 移除之前的地图选中状�?
     document.querySelectorAll('.marker.selected').forEach(el => el.classList.remove('selected'));
 
-    // 添加地图选中状�?
+    // 添加地图选中状�?
     const markerEl = document.querySelector(`.marker[data-id="${markerId}"]`);
     if (markerEl) {
         markerEl.classList.add('selected');
@@ -1887,10 +1887,10 @@ function selectMarker(markerId, event) {
         }
     });
 
-    // 创建或更新选择�?
+    // 创建或更新选择�?
     createSelectionBox(marker, markerEl);
 
-    // 开始拖动标�?
+    // 开始拖动标�?
     if (event && event.clientX !== undefined) {
         isDraggingMarker = true;
         dragStartX = event.clientX;
@@ -1913,19 +1913,19 @@ function deselectMarker() {
 
 // Create selection box with resize handles
 function createSelectionBox(marker, markerEl) {
-    // 移除旧的选择�?
+    // 移除旧的选择�?
     if (selectionBox) {
         selectionBox.remove();
     }
 
-    // 创建选择�?
+    // 创建选择�?
     selectionBox = document.createElement('div');
     selectionBox.className = 'marker-selection-box active';
     selectionBox.style.position = 'absolute';
     selectionBox.style.pointerEvents = 'none';
 
-    // 直接获取标记元素的屏幕位置和尺寸 (markers-layer �?editorMarkers 同一屏幕像素坐标�?
-    // 位置�?AABB 中心, 尺寸�?offsetWidth/Height (未旋�?, �?syncSelectionBoxToSelected 一�?
+    // 直接获取标记元素的屏幕位置和尺寸 (markers-layer �?editorMarkers 同一屏幕像素坐标�?
+    // 位置�?AABB 中心, 尺寸�?offsetWidth/Height (未旋�?, �?syncSelectionBoxToSelected 一�?
     const markerRect = markerEl.getBoundingClientRect();
     const containerRect = editorMarkersContainer.getBoundingClientRect();
 
@@ -1936,9 +1936,9 @@ function createSelectionBox(marker, markerEl) {
     const left = centerX - width / 2;
     const top = centerY - height / 2;
 
-    // 用函数参�?marker (createSelectionBox 接收的就�?markers[] 里的对象),
-    // 不要�?markerId - 这个函数签名里没�?markerId, 之前引用导致 find 返回 undefined,
-    // rotation 默认 0, 选择框第一次创建时没旋�? 调整过一次后才修�?
+    // 用函数参�?marker (createSelectionBox 接收的就�?markers[] 里的对象),
+    // 不要�?markerId - 这个函数签名里没�?markerId, 之前引用导致 find 返回 undefined,
+    // rotation 默认 0, 选择框第一次创建时没旋�? 调整过一次后才修�?
     const rotation = (marker && marker.rotation) || 0;
 
     selectionBox.style.left = left + 'px';
@@ -1948,8 +1948,8 @@ function createSelectionBox(marker, markerEl) {
     selectionBox.style.transform = `rotate(${rotation}deg)`;
     selectionBox.style.transformOrigin = 'center center';
 
-    // 创建8个调整手柄（四角+四边�?
-    // 手柄大小根据标记大小动态调整，但有最小最大限�?
+    // 创建8个调整手柄（四角+四边�?
+    // 手柄大小根据标记大小动态调整，但有最小最大限�?
     const baseHandleSize = Math.max(12, Math.min(24, Math.min(width, height) * 0.3));
 
     const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -1959,7 +1959,7 @@ function createSelectionBox(marker, markerEl) {
         handle.dataset.position = position;
         handle.style.pointerEvents = 'all';
 
-        // 动态手柄大�?
+        // 动态手柄大�?
         handle.style.width = baseHandleSize + 'px';
         handle.style.height = baseHandleSize + 'px';
 
@@ -1985,7 +1985,7 @@ function createSelectionBox(marker, markerEl) {
     rotateHandle.style.width = Math.max(20, baseHandleSize) + 'px';
     rotateHandle.style.height = Math.max(20, baseHandleSize) + 'px';
     rotateHandle.style.fontSize = Math.max(12, baseHandleSize * 0.6) + 'px';
-    rotateHandle.textContent = '�?;
+    rotateHandle.textContent = '🔄';
     rotateHandle.title = '拖动旋转标记';
     rotateHandle.addEventListener('mousedown', (e) => {
         e.stopPropagation();
@@ -2077,7 +2077,7 @@ function startRotate(event) {
     const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
     if (!markerEl) return;
 
-    // 标记视觉中心 (考虑 editorScale �?translate 偏移)
+    // 标记视觉中心 (考虑 editorScale �?translate 偏移)
     const markerRect = markerEl.getBoundingClientRect();
     const containerRect = editorMapWrapper.getBoundingClientRect();
     const centerX = (markerRect.left + markerRect.width / 2 - containerRect.left) / editorScale;
@@ -2092,8 +2092,8 @@ function startRotate(event) {
     event.preventDefault();
 }
 
-// Start resizing - 记录初始状�?(屏幕像素, 改为记录 mousedown 时的鼠标位置,
-// 后续�?鼠标相对位移"算新尺寸, 解决绝对位置算法�?缩到最小就被锁�?的问�?
+// Start resizing - 记录初始状�?(屏幕像素, 改为记录 mousedown 时的鼠标位置,
+// 后续�?鼠标相对位移"算新尺寸, 解决绝对位置算法�?缩到最小就被锁�?的问�?
 function startResize(handlePosition, event) {
     isResizing = true;
     resizeHandle = handlePosition;
@@ -2105,16 +2105,16 @@ function startResize(handlePosition, event) {
     const markerRect = markerEl.getBoundingClientRect();
     const containerRect = editorMarkersContainer.getBoundingClientRect();
 
-    // 锚点: 标记�?style.left/top 就是锚点屏幕坐标 (icon 底中�? 文字中心)
+    // 锚点: 标记�?style.left/top 就是锚点屏幕坐标 (icon 底中�? 文字中心)
     const anchorScreenX = parseFloat(markerEl.style.left) || (markerRect.left - containerRect.left);
     const anchorScreenY = parseFloat(markerEl.style.top) || (markerRect.top - containerRect.top);
 
-    // 拖动开始时鼠标的屏幕坐�?(作为"原点", 后续�?delta �?
+    // 拖动开始时鼠标的屏幕坐�?(作为"原点", 后续�?delta �?
     const startMouseX = event.clientX - containerRect.left;
     const startMouseY = event.clientY - containerRect.top;
 
-    // 拖动开始时标记的当前屏幕像素尺�?
-    // �?offsetWidth/offsetHeight (未旋�?, 跟选中�?/ 拖动公式保持一�? 不受旋转 AABB 影响
+    // 拖动开始时标记的当前屏幕像素尺�?
+    // �?offsetWidth/offsetHeight (未旋�?, 跟选中�?/ 拖动公式保持一�? 不受旋转 AABB 影响
     const currentWidth = markerEl.offsetWidth;
     const currentHeight = markerEl.offsetHeight;
 
@@ -2136,7 +2136,7 @@ document.addEventListener('mousemove', handleEditorMouseMove); // Ensure listene
 
 function handleEditorMouseMove(e) {
     if (isRotating && selectedMarkerId) {
-        // 旋转标记: 计算鼠标相对标记中心的角�? 减去起始角度得到增量
+        // 旋转标记: 计算鼠标相对标记中心的角�? 减去起始角度得到增量
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
@@ -2169,7 +2169,7 @@ function handleEditorMouseMove(e) {
     }
 
     if (isDraggingMarker && selectedMarkerId) {
-        // 拖动标记: markers-layer 屏幕像素坐标, �?updateEditorMarkerScales 保持一�?
+        // 拖动标记: markers-layer 屏幕像素坐标, �?updateEditorMarkerScales 保持一�?
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
@@ -2181,15 +2181,15 @@ function handleEditorMouseMove(e) {
 
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
         if (markerEl) {
-            // 源坐�?-> 屏幕像素: editorMapImage.transform = translate(tx, ty) scale(s)
-            // 标记�?(markers-layer) �?mapWrapper 同坐�? 直接用编辑器 transform
+            // 源坐�?-> 屏幕像素: editorMapImage.transform = translate(tx, ty) scale(s)
+            // 标记�?(markers-layer) �?mapWrapper 同坐�? 直接用编辑器 transform
             const screenX = editorTranslateX + marker.x * editorScale;
             const screenY = editorTranslateY + marker.y * editorScale;
             markerEl.style.left = screenX + 'px';
             markerEl.style.top = screenY + 'px';
 
-            // 选中框跟�?- �?syncSelectionBoxToSelected 一�? AABB 中心定位
-            // containerRect 在外面算一�? 拖动期间 markers-layer 不动
+            // 选中框跟�?- �?syncSelectionBoxToSelected 一�? AABB 中心定位
+            // containerRect 在外面算一�? 拖动期间 markers-layer 不动
             if (selectionBox) {
                 const containerRect = editorMarkersContainer.getBoundingClientRect();
                 const markerRect = markerEl.getBoundingClientRect();
@@ -2202,9 +2202,9 @@ function handleEditorMouseMove(e) {
             }
         }
     } else if (isResizing && selectedMarkerId && resizeStartBounds) {
-        // 完全重写�?跟随鼠标"resize:
-        // 用户拖动把手, 标记对应边缘/角点要落在鼠标位�? 对侧锚点不动; 整体按比例缩�?
-        // 全部用屏幕像素算, 不再绕道源坐�? 公式直观且与 mark.scale 数据解�?
+        // 完全重写�?跟随鼠标"resize:
+        // 用户拖动把手, 标记对应边缘/角点要落在鼠标位�? 对侧锚点不动; 整体按比例缩�?
+        // 全部用屏幕像素算, 不再绕道源坐�? 公式直观且与 mark.scale 数据解�?
 
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
@@ -2220,49 +2220,49 @@ function handleEditorMouseMove(e) {
             isText
         } = resizeStartBounds;
 
-        // 鼠标相对 mousedown 位置的位�?
+        // 鼠标相对 mousedown 位置的位�?
         const deltaX = mouseScreenX - startMouseX;
         const deltaY = mouseScreenY - startMouseY;
 
-        // 1. 根据被拖动的手柄算出"跟随鼠标"的新尺寸 (用相对位�? 不是绝对位置)
-        // 之前用绝对位�?(newWidth = 2 * (mouseX - anchorX)) 出现:
-        //   1. 文字标记选框半宽本身就窄, 鼠标靠近锚点就算出负数被钳到 10px, 看起�?完全无法缩放"
-        //   2. 缩小�?10px �? 鼠标要在很特定位置才能算�?> 10 �?newWidth, 看起�?锁死"
-        // 改为相对位移: 鼠标�?mousedown 位置�?deltaX/deltaY, 直接�?delta 增减尺寸.
+        // 1. 根据被拖动的手柄算出"跟随鼠标"的新尺寸 (用相对位�? 不是绝对位置)
+        // 之前用绝对位�?(newWidth = 2 * (mouseX - anchorX)) 出现:
+        //   1. 文字标记选框半宽本身就窄, 鼠标靠近锚点就算出负数被钳到 10px, 看起�?完全无法缩放"
+        //   2. 缩小�?10px �? 鼠标要在很特定位置才能算�?> 10 �?newWidth, 看起�?锁死"
+        // 改为相对位移: 鼠标�?mousedown 位置�?deltaX/deltaY, 直接�?delta 增减尺寸.
         let newWidth = currentWidth;
         let newHeight = currentHeight;
 
-        // 'e' (右把�?: 把手初始�?anchorX + currentWidth/2, �?deltaX 后位置是原位�?+ deltaX
+        // 'e' (右把�?: 把手初始�?anchorX + currentWidth/2, �?deltaX 后位置是原位�?+ deltaX
         //   新右边缘 = 原右边缘 + deltaX
-        //   右边�?= anchorX + newWidth/2
+        //   右边�?= anchorX + newWidth/2
         //   newWidth = currentWidth + 2 * deltaX
         if (resizeHandle.includes('e')) {
             newWidth = currentWidth + 2 * deltaX;
         }
-        // 'w' (左把�?: 把手初始�?anchorX - currentWidth/2, �?deltaX 后是原位�?+ deltaX
+        // 'w' (左把�?: 把手初始�?anchorX - currentWidth/2, �?deltaX 后是原位�?+ deltaX
         //   新左边缘 = 原左边缘 + deltaX
-        //   左边�?= anchorX - newWidth/2
+        //   左边�?= anchorX - newWidth/2
         //   -newWidth/2 = -currentWidth/2 + deltaX  =>  newWidth = currentWidth - 2 * deltaX
         if (resizeHandle.includes('w')) {
             newWidth = currentWidth - 2 * deltaX;
         }
-        // 'n' (上把�?: 把手初始在标记上边缘, �?deltaY 后新上边�?= 原上边缘 + deltaY
+        // 'n' (上把�?: 把手初始在标记上边缘, �?deltaY 后新上边�?= 原上边缘 + deltaY
         if (resizeHandle.includes('n')) {
             if (isText) {
                 // 文字锚点中心: 原上边缘 = anchorY - currentHeight/2
                 //   newTop = anchorY - currentHeight/2 + deltaY
                 //   newTop = anchorY - newHeight/2
-                //   newHeight = currentHeight - 2 * deltaY  (向上�? deltaY �? newHeight 增大)
+                //   newHeight = currentHeight - 2 * deltaY  (向上�? deltaY �? newHeight 增大)
                 newHeight = currentHeight - 2 * deltaY;
             } else {
-                // icon 锚点底中�? 原上边缘 = anchorY - currentHeight
+                // icon 锚点底中�? 原上边缘 = anchorY - currentHeight
                 //   newTop = anchorY - currentHeight + deltaY
                 //   newTop = anchorY - newHeight
                 //   newHeight = currentHeight - deltaY
                 newHeight = currentHeight - deltaY;
             }
         }
-        // 's' (下把�?: 把手初始在标记下边缘, �?deltaY 后新下边�?= 原下边缘 + deltaY
+        // 's' (下把�?: 把手初始在标记下边缘, �?deltaY 后新下边�?= 原下边缘 + deltaY
         if (resizeHandle.includes('s')) {
             if (isText) {
                 // 文字: 原下边缘 = anchorY + currentHeight/2
@@ -2271,36 +2271,36 @@ function handleEditorMouseMove(e) {
                 //   newHeight = currentHeight + 2 * deltaY
                 newHeight = currentHeight + 2 * deltaY;
             } else {
-                // icon: 下边缘就是锚�?(固定�?anchorY), �?'s' 改不�?Y
+                // icon: 下边缘就是锚�?(固定�?anchorY), �?'s' 改不�?Y
                 newHeight = currentHeight;
             }
         }
 
-        // 2. 下限钳到 4px (防拖到锚点另一侧算出负�?0, 标记彻底消失).
-        //    上限不设, 让用户能继续缩放; 失控�?(e.g. 鼠标飞出几万像素) 信任用户能拖�?
+        // 2. 下限钳到 4px (防拖到锚点另一侧算出负�?0, 标记彻底消失).
+        //    上限不设, 让用户能继续缩放; 失控�?(e.g. 鼠标飞出几万像素) 信任用户能拖�?
         newWidth = Math.max(4, newWidth);
         newHeight = Math.max(4, newHeight);
 
         // 3. 由新尺寸反推 scale
         //    ratioX/Y = newSize / currentSize
-        //    max 保证拖动方向"撑到"鼠标, 另一轴等�?(圆角/icon 不变�?
-        //    单轴把手 (e/w/n/s) 只有一�?ratio 有意�? 另一个是 1
+        //    max 保证拖动方向"撑到"鼠标, 另一轴等�?(圆角/icon 不变�?
+        //    单轴把手 (e/w/n/s) 只有一�?ratio 有意�? 另一个是 1
         //    角点把手两个 ratio 都有, max 决定缩放比例
         const ratioX = newWidth / currentWidth;
         const ratioY = newHeight / currentHeight;
         const newScale = markerStartScale * Math.max(ratioX, ratioY);
 
-        // 4. 应用到标�?
+        // 4. 应用到标�?
         marker.scale = newScale;
 
-        // 5. box �?font 全部交给 updateEditorMarkerScales �?(�?targetSize 派生),
-        //    不要�?resize handler 里手动写 style.width/height, 那样 box �?font 会脱�?
-        //    之前 icon/text 两套逻辑互相对不�? 现在统一�?targetSize 公式.
+        // 5. box �?font 全部交给 updateEditorMarkerScales �?(�?targetSize 派生),
+        //    不要�?resize handler 里手动写 style.width/height, 那样 box �?font 会脱�?
+        //    之前 icon/text 两套逻辑互相对不�? 现在统一�?targetSize 公式.
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
         updateEditorMarkerScales();
 
-        // 6. 选择框跟�?- �?syncSelectionBoxToSelected 保持一�? AABB 中心定位 +
-        //    offsetWidth/Height 尺寸 + 一起旋�?
+        // 6. 选择框跟�?- �?syncSelectionBoxToSelected 保持一�? AABB 中心定位 +
+        //    offsetWidth/Height 尺寸 + 一起旋�?
         if (markerEl && selectionBox) {
             const markerRect = markerEl.getBoundingClientRect();
             const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
@@ -2333,7 +2333,7 @@ function handleEditorMouseMove(e) {
     }
 }
 
-// 显示缩放比例指示�?
+// 显示缩放比例指示�?
 function updateScaleIndicator(scale) {
     let indicator = document.getElementById('scaleIndicator');
     if (!indicator) {
@@ -2885,12 +2885,12 @@ async function loadSettings() {
     }
 }
 
-// 重置当前编辑中标记的旋转角度�?0
+// 重置当前编辑中标记的旋转角度�?0
 window.resetMarkerRotation = function () {
     const rotField = document.getElementById('markerRotation');
     if (rotField) {
         rotField.value = 0;
-        // 同步到当前选中的标�?(如果�? 并实时刷新预�?
+        // 同步到当前选中的标�?(如果�? 并实时刷新预�?
         if (selectedMarkerId) {
             const marker = markers.find(m => m.id === selectedMarkerId);
             if (marker) {
@@ -2919,15 +2919,15 @@ function setupRotationFieldListener() {
     });
 }
 
-// 层级 (Z-Order) 输入框实时同�?+ 顶层/底层快捷按钮
-// 大数字覆盖在上面, 解决大标记挡住小标记的问�?
+// 层级 (Z-Order) 输入框实时同�?+ 顶层/底层快捷按钮
+// 大数字覆盖在上面, 解决大标记挡住小标记的问�?
 function setupZIndexButtons() {
     const zField = document.getElementById('markerZIndex');
     const frontBtn = document.getElementById('bringToFrontBtn');
     const backBtn = document.getElementById('sendToBackBtn');
     if (!zField) return;
 
-    // 输入框实时同�?(编辑当前选中标记�?zIndex, 立刻反映到地图上)
+    // 输入框实时同�?(编辑当前选中标记�?zIndex, 立刻反映到地图上)
     zField.addEventListener('input', () => {
         if (selectedMarkerId) {
             const marker = markers.find(m => m.id === selectedMarkerId);
@@ -2935,14 +2935,14 @@ function setupZIndexButtons() {
             if (marker && idField && idField.value === selectedMarkerId) {
                 const v = parseInt(zField.value, 10) || 0;
                 marker.zIndex = v;
-                // 立刻更新 DOM �?z-index, 不用等保�?
+                // 立刻更新 DOM �?z-index, 不用等保�?
                 const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
                 if (markerEl) markerEl.style.zIndex = v;
             }
         }
     });
 
-    // 顶层按钮: 当前 zIndex = 所有标�?zIndex 最大�?+ 1
+    // 顶层按钮: 当前 zIndex = 所有标�?zIndex 最大�?+ 1
     if (frontBtn) {
         frontBtn.addEventListener('click', () => {
             if (markers.length === 0) return;
@@ -2952,7 +2952,7 @@ function setupZIndexButtons() {
         });
     }
 
-    // 底层按钮: 当前 zIndex = 所有标�?zIndex 最小�?- 1
+    // 底层按钮: 当前 zIndex = 所有标�?zIndex 最小�?- 1
     if (backBtn) {
         backBtn.addEventListener('click', () => {
             if (markers.length === 0) return;
@@ -2967,7 +2967,7 @@ function setupZIndexButtons() {
 async function saveSettings() {
     const title = document.getElementById('siteTitle').value.trim();
     if (!title) {
-        alert('请输入网站名�?);
+        alert('请输入网站名称');
         return;
     }
 
@@ -2996,7 +2996,7 @@ async function saveSettings() {
         });
 
         if (response.ok) {
-            alert('设置已保�?);
+            alert('设置已保存');
             // Clear newUrl flag
             delete preview.dataset.newUrl;
         } else {
@@ -3108,19 +3108,19 @@ async function changePassword() {
 
     // Validate inputs
     if (!oldPassword || !newPassword || !confirmPassword) {
-        statusDiv.textContent = '�?请填写所有字�?;
+        statusDiv.textContent = '⚠️ 请填写所有字段';
         statusDiv.className = 'status-message error';
         return;
     }
 
     if (newPassword.length < 4) {
-        statusDiv.textContent = '�?新密码至少需�?�?;
+        statusDiv.textContent = '⚠️ 新密码至少需要4位';
         statusDiv.className = 'status-message error';
         return;
     }
 
     if (newPassword !== confirmPassword) {
-        statusDiv.textContent = '�?两次输入的新密码不一�?;
+        statusDiv.textContent = '⚠️ 两次输入的新密码不一致';
         statusDiv.className = 'status-message error';
         return;
     }
@@ -3140,7 +3140,7 @@ async function changePassword() {
         const result = await response.json();
 
         if (response.ok) {
-            statusDiv.textContent = '�?密码修改成功!即将跳转到登录页�?..';
+            statusDiv.textContent = '✓ 密码修改成功!即将跳转到登录页面...';
             statusDiv.className = 'status-message success';
 
             // Clear form
@@ -3151,12 +3151,12 @@ async function changePassword() {
                 window.location.reload();
             }, 2000);
         } else {
-            statusDiv.textContent = '�?' + (result.error || '密码修改失败');
+            statusDiv.textContent = '✗ ' + (result.error || '密码修改失败');
             statusDiv.className = 'status-message error';
         }
     } catch (error) {
         console.error('Change password error:', error);
-        statusDiv.textContent = '�?密码修改失败,请重�?;
+        statusDiv.textContent = '✗ 密码修改失败,请重试';
         statusDiv.className = 'status-message error';
     }
 }
@@ -3206,7 +3206,7 @@ async function loadSidebarConfig() {
         renderSidebarConfig();
     } catch (error) {
         console.error('Failed to load sidebar config:', error);
-        showNotification('加载侧边栏配置失�?, 'error');
+        showNotification('加载侧边栏配置失败', 'error');
     }
 }
 
@@ -3222,7 +3222,7 @@ function renderSidebarConfig() {
 
         return `
             <div class="sidebar-config-item" draggable="true" data-key="${item.key}" data-index="${index}">
-                <div class="sidebar-config-drag-handle">�?/div>
+                <div class="sidebar-config-drag-handle">☰</div>
                 <div class="sidebar-config-icon" style="background: ${item.color}20;">
                     ${iconHtml}
                 </div>
@@ -3249,15 +3249,15 @@ function renderSidebarConfig() {
 // Helper function to get icon SVG (simplified version)
 function getIconSvg(iconName) {
     const icons = {
-        printer: '🖨�?,
+        printer: '🖨️',
         shredder: '📄',
         tv: '📺',
-        screen: '🖥�?,
-        server: '🗄�?,
+        screen: '🖥️',
+        server: '🗄️',
         console: '⌨️',
         icemaker: '🧊',
         water: '💧',
-        coffee: '�?,
+        coffee: '☕',
         snacks: '🍿',
         person: '👤',
         meeting: '🏢',
@@ -3348,7 +3348,7 @@ async function saveSidebarConfig() {
         const btn = document.getElementById('saveSidebarConfigBtn');
         if (btn) {
             btn.disabled = true;
-            btn.textContent = '保存�?..';
+            btn.textContent = '保存中...';
         }
 
         // Update all icon types with new order and visibility
@@ -3378,14 +3378,14 @@ async function saveSidebarConfig() {
         showNotification('侧边栏配置已保存', 'success');
         if (btn) {
             btn.disabled = false;
-            btn.textContent = '💾 保存侧边栏配�?;
+            btn.textContent = '💾 保存侧边栏配置';
         }
     } catch (error) {
         console.error('Failed to save sidebar config:', error);
         showNotification('保存失败', 'error');
         if (btn) {
             btn.disabled = false;
-            btn.textContent = '💾 保存侧边栏配�?;
+            btn.textContent = '💾 保存侧边栏配置';
         }
     }
 }
