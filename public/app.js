@@ -757,10 +757,9 @@ function animateToMarker(marker, onComplete) {
     const containerWidth = mapWrapper.offsetWidth;
     const containerHeight = mapWrapper.offsetHeight;
 
-    // 目标缩放: 至少放大到 baseScale * 3 或当前缩放的 1.8 倍 (取大), 上限 5
-    const minTarget = baseScale * 3;
+    // 目标缩放: 固定放大到 baseScale * 3, 保证每次聚焦效果一致, 不会越点越大
     const fromScale = scale;
-    const targetScale = Math.min(5, Math.max(minTarget, fromScale * 1.8, 0.8));
+    const targetScale = Math.min(5, Math.max(baseScale * 3, 0.8));
 
     // 目标平移: 将标记居中
     const targetTranslateX = containerWidth / 2 - marker.x * targetScale;
