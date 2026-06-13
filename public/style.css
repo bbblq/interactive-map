@@ -385,12 +385,21 @@ body {
   position: relative;
 }
 
-/* Adjust header in collapsed state */
+/* Adjust header in collapsed state: 图标严格居中
+   之前用 justify-content: center 但 .category-left 里 flex 布局把图标推到左边,
+   这里强制 .category-icon-wrapper 居中. */
 .sidebar:not(.expanded) .category-header {
   justify-content: center;
-  /* Center the icon */
-  padding: 15px 8px;
+  padding: 15px 0;
   overflow: visible;
+}
+.sidebar:not(.expanded) .category-left {
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 100%;
+}
+.sidebar:not(.expanded) .category-icon-wrapper {
+  margin: 0 auto;
 }
 
 .sidebar.expanded .sidebar-content {
@@ -1158,6 +1167,140 @@ body {
 }
 
 /* Center sidebar icons in collapsed state */
-.sidebar:not(.expanded) .category-left {
+sidebar:not(.expanded) .category-left {
   justify-content: center;
 }
+
+
+/* ============================================
+   导出功能 (Export) - 弹窗 + 范围选择
+   ============================================ */
+.export-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 3000;
+  align-items: center;
+  justify-content: center;
+}
+.export-modal.active {
+  display: flex;
+}
+.export-modal-content {
+  background: white;
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: modalSlideIn 0.25s ease;
+}
+.export-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+.export-modal-row {
+  margin-bottom: 14px;
+}
+.export-modal-row label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.export-format-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.export-format-card {
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+  background: white;
+}
+.export-format-card:hover {
+  border-color: var(--primary-color);
+  background: var(--bg-light);
+}
+.export-format-card.selected {
+  border-color: var(--primary-color);
+  background: rgba(74, 144, 226, 0.08);
+}
+.export-format-card .icon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 6px;
+}
+.export-format-card .label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.export-format-card .desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.export-range-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.export-range-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+  background: white;
+}
+.export-range-card:hover {
+  border-color: var(--primary-color);
+}
+.export-range-card.selected {
+  border-color: var(--primary-color);
+  background: rgba(74, 144, 226, 0.08);
+}
+.export-range-card .label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.export-range-card .desc {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.export-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.export-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-height: 16px;
+  text-align: center;
+}
+.export-status.error {
+  color: #d32f2f;
+}
+.export-status.success {
+  color: #2e7d32;
+}
+

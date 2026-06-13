@@ -25,6 +25,9 @@
       <input type="text" id="searchInput" class="search-input" placeholder="🔍 搜索标记、人员、部门...">
       <div id="searchResults" class="search-results"></div>
     </div>
+    <div class="header-actions" style="display:flex;gap:8px;align-items:center;margin-left:12px;">
+      <button id="exportBtn" class="btn btn-secondary" title="导出当前可见地图为 JPG 图片" style="white-space:nowrap;">⬇ 导出</button>
+    </div>
   </header>
 
   <!-- Main Container -->
@@ -91,7 +94,47 @@
     </div>
   </div>
 
-  <script src="app.js?v=2"></script>
+  <!-- Export Modal -->
+  <div id="exportModal" class="export-modal">
+    <div class="export-modal-content">
+      <div class="export-modal-title">⬇ 导出地图</div>
+
+      <div class="export-modal-row">
+        <label>格式</label>
+        <div class="export-format-grid" id="exportFormatGrid">
+          <div class="export-format-card selected" data-format="jpg">
+            <span class="icon">🖼</span>
+            <div class="label">JPG 图片</div>
+            <div class="desc">光栅位图, 不可搜索</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="export-modal-row">
+        <label>导出范围</label>
+        <div class="export-range-grid" id="exportRangeGrid">
+          <div class="export-range-card selected" data-range="viewport">
+            <div class="label">当前可见视野</div>
+            <div class="desc">屏幕上的内容</div>
+          </div>
+          <div class="export-range-card" data-range="full">
+            <div class="label">完整地图</div>
+            <div class="desc">原图全幅, 不受缩放影响</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="export-status" id="exportStatus"></div>
+
+      <div class="export-modal-actions">
+        <button type="button" class="btn btn-secondary" id="exportCancelBtn">取消</button>
+        <button type="button" class="btn btn-primary" id="exportConfirmBtn">开始导出</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="app.js?v=11"></script>
 </body>
 
 </html>

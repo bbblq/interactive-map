@@ -303,15 +303,16 @@ function updateTransform() {
     scheduleTransform();
 }
 
-// 标记按目标屏幕像素尺寸直接栅格化 (不走 transform: scale), 保证矢量清晰.
-// 行为: 标记与地图等比缩放, sizeMul 作为全局倍率.
-//   targetSize = BASE * markerScale * sizeMul * (scale / baseScale)
-// 在 fit-to-screen (scale = baseScale) 时, targetSize = BASE * markerScale * sizeMul.
-// 缩放时标记与地图等比伸缩, 保证前台和后台视觉一致.
+// 标记与地图等比缩放 (跟前台 / 后台 / 导出三处完全一致).
+// 公式: targetSize = BASE * markerScale * sizeMul * scale
+// 标记屏幕位置 = translateX/Y + marker.x/y * scale
+// 源图上不重叠的标记, 视觉上也不重叠 (因为是等比缩放).
+// 跟后台编辑器用同一套公式, 保证前/后/导出三方一致.
 const MARKER_BASE_SIZE = 32; // 与 CSS 中 .marker-icon-part 原始宽高一致
 const MARKER_FONT_BASE = 13; // 与 CSS 中 .marker-label-part 原始 font-size 一致
-const ICON_TEXT_GAP_BASE = 4; // 图标与文字间距
-const LABEL_PADDING_BASE = 10; // 文字左右内边距
+// 不锁死最小像素, 标记严格按几何等比缩放. 之前锁死 MIN_VIS_PX=8 时,
+// 缩小地图会导致两个源图上分开但屏幕距离很小的 marker 互相入侵重叠.
+// 源图不重叠 → 屏幕也绝不重叠 (等比缩放).
 
 function updateMarkerTransforms() {
     if (!mapImg.naturalWidth) return;
@@ -333,25 +334,26 @@ function updateMarkerTransforms() {
         markerEl.style.top = screenY + 'px';
 
         if (isText) {
-            // 文字标记: 自由尺寸, 边长和字体跟随地图缩放
+            // 文字标记: 跟地图等比缩放, 直接乘 scale (前台/后台/导出三方一致)
             const baseW = marker.width || (48 * markerScale);
             const baseH = marker.height || (32 * markerScale);
             const w = baseW * scale * sizeMul;
             const h = baseH * scale * sizeMul;
-            
+
             markerEl.style.width = w + 'px';
             markerEl.style.height = h + 'px';
-            
+
             const label = markerEl.querySelector('.text-label');
             if (label) {
-                const fontPx = Math.max(4, (marker.fontSize || 14) * scale * sizeMul);
-                label.style.fontSize = fontPx + 'px';
+                const baseFontPx = (marker.fontSize || 14) * scale * sizeMul;
+                label.style.fontSize = baseFontPx + 'px';
             }
             markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
         } else {
-            // 图标标记: 保持等比缩放
-            const targetSize = MARKER_BASE_SIZE * markerScale * sizeMul * scale;
-            
+            // 图标标记: 跟地图等比缩放 (前台/后台/导出三方一致)
+            const baseSize = MARKER_BASE_SIZE * markerScale * sizeMul * scale;
+            const targetSize = baseSize;
+
             const iconPart = markerEl.querySelector('.marker-icon-part');
             if (iconPart) {
                 iconPart.style.width = targetSize + 'px';
@@ -389,7 +391,8 @@ function renderMarkers() {
 
         // 判断是否是文字标记
         if (marker.type === 'text') {
-            markerEl.className = `marker marker-text-only ${marker.category || ''}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(marker.category) ? ' category-hidden' : ''}`;
+            const textCat = marker.category || 'other';
+            markerEl.className = `marker marker-text-only ${textCat}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(textCat) ? ' category-hidden' : ''}`;
             const content = escapeHtml(marker.content || marker.label);
             // 同步编辑器里设的颜色 (8 位 hex 含 alpha, CSS 原生支持)
             const textColor = marker.textColor || '';
@@ -410,7 +413,8 @@ function renderMarkers() {
             markerEl.innerHTML = `<div class="text-label" style="${colorStyle}">${content}</div>`;
         } else {
             // 图标标记
-            markerEl.className = `marker ${marker.category}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(marker.category) ? ' category-hidden' : ''}`;
+            const iconCat = marker.category || 'other';
+            markerEl.className = `marker ${iconCat}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(iconCat) ? ' category-hidden' : ''}`;
 
             let iconContent;
             const type = iconTypes[marker.category] || iconTypes.other;
@@ -539,10 +543,10 @@ function renderCategories() {
             <div class="category-left" onclick="toggleCategoryExpand('${key}')">
               <span class="category-expand-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
               <span class="category-icon-wrapper">
-                <span class="category-icon" style="display: flex; align-items: center; justify-content: center;">${iconHtml}</span>
+                <span class="category-icon" style="display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="toggleCategoryExpand('${key}')">${iconHtml}</span>
                 <span class="category-badge">${count}</span>
               </span>
-              <span class="category-name">${cat.name}</span>
+              <span class="category-name" style="cursor: pointer;" onclick="toggleCategoryExpand('${key}')">${cat.name}</span>
               <span class="category-count-text">${count}</span>
             </div>
             <button class="category-visibility-btn" onclick="event.stopPropagation(); toggleCategoryVisibility('${key}')" title="${isHidden ? '显示分类' : '隐藏分类'}">
@@ -629,11 +633,14 @@ function updateCategoryVisuals() {
 }
 
 // Update marker visibility without full re-render (just toggle class)
+// 关键: 文字标记可能没设 category, 但被 renderCategories() 归到 'other' 显示.
+// 这里用同一个 fallback ('其他' -> 'other') 跟 sidebar 状态对得上, 眼睛按钮才有效.
 function updateMarkerVisibility() {
     markers.forEach(marker => {
         const markerEl = markersContainer.querySelector(`.marker[data-marker-id="${CSS.escape(marker.id)}"]`);
         if (!markerEl) return;
-        markerEl.classList.toggle('category-hidden', hiddenCategories.has(marker.category));
+        const cat = marker.category || 'other';
+        markerEl.classList.toggle('category-hidden', hiddenCategories.has(cat));
     });
 }
 
@@ -982,5 +989,204 @@ function getCenter(touch1, touch2) {
     };
 }
 
+
+// ============================================
+// 导出功能 (Export Map as JPG)
+// ============================================
+//
+// 设计要点:
+//   1. 范围 (range): viewport = 当前屏幕视野; full = 原图全幅
+//   2. 筛选: 只导出前台"可见"的标记 - 即 showMarkers=true 且类别不在 hiddenCategories
+//   3. 标记信息: 文字标记导出"content" 字段, 图标标记导出"label" 字段
+//   4. 坐标系转换: 屏幕坐标 (translateX + marker.x * scale) 映射到源坐标
+//   5. JPG: 用 canvas 把地图背景 + 标记一起画成位图, toBlob 导出
+//
+// 注意事项:
+//   - 导出过程不阻塞 UI (用 setTimeout 让进度可见)
+//   - 高分辨率原图 (e.g. 4000x3000) 画到 canvas 可能 OOM, 需要降采样
+
+let exportRange = 'viewport';
+
+function openExportModal() {
+    document.getElementById('exportModal').classList.add('active');
+    setExportStatus('', '');
+}
+
+function closeExportModal() {
+    document.getElementById('exportModal').classList.remove('active');
+}
+
+function setExportStatus(text, kind) {
+    const el = document.getElementById('exportStatus');
+    el.textContent = text || '';
+    el.className = 'export-status' + (kind ? ' ' + kind : '');
+}
+
+// 筛选"前台可见"的标记
+// 隐藏规则 (跟 updateMarkerVisibility 保持一致):
+//   - showMarkers = false => 全部隐藏
+//   - hiddenCategories.has(marker.category || 'other') => 该类别隐藏
+//     文字标记可能没设 category, 跟 sidebar 一致归到 'other'
+function getVisibleMarkers() {
+    if (!showMarkers) return [];
+    return markers.filter(m => !hiddenCategories.has(m.category || 'other'));
+}
+
+// 准备导出: 直接用 html2canvas 拍前台 DOM (mapWrapper 当前显示状态)
+// 返回 { canvas, visibleMarkers, outW, outH }
+//   - canvas: 拍下来的位图 (跟用户在前台看到的一致)
+//   - visibleMarkers: 前台"可见"的标记列表
+//   - outW, outH: 输出尺寸
+//
+// 原理: 不用 canvas API 重新画 (必然跟 DOM 不一致), 直接用 html2canvas 序列化 DOM 节点.
+// 跟用户"截图前台"行为完全一致.
+async function renderExportCanvas(range) {
+    if (!mapImg.naturalWidth) throw new Error('地图未加载');
+    if (typeof html2canvas !== 'function') throw new Error('html2canvas 未加载');
+
+    const wrapperW = mapWrapper.offsetWidth;
+    const wrapperH = mapWrapper.offsetHeight;
+
+    // "完整地图" 模式: 临时把整个源图缩放到 viewport 大小, 拍完恢复
+    // 否则拍出来的只是当前视野 (跟 viewport 模式一样)
+    let savedState = null;
+    if (range === 'full') {
+        const srcW = mapImg.naturalWidth;
+        const srcH = mapImg.naturalHeight;
+        // 临时把地图缩放到 fit wrapper, 居中显示
+        const tmpScale = Math.min(wrapperW / srcW, wrapperH / srcH);
+        const tmpTx = (wrapperW - srcW * tmpScale) / 2;
+        const tmpTy = (wrapperH - srcH * tmpScale) / 2;
+        savedState = {
+            scale,
+            translateX,
+            translateY,
+            mapImageTransform: mapImage.style.transform
+        };
+        // 直接改全局 scale/translate, 让 scheduleTransform 同步 mapImage.transform + markers 位置
+        scale = tmpScale;
+        translateX = tmpTx;
+        translateY = tmpTy;
+        scheduleTransform();
+        // 等 transform 跟 markers 都更新完 (两个 raf: 一个 scheduleTransform 的, 一个浏览器 layout)
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+
+    let canvas;
+    try {
+        canvas = await html2canvas(mapWrapper, {
+            backgroundColor: '#ffffff',
+            // scale: 2 让导出位图更清晰 (前台 1 屏幕像素 = 导出 2 像素)
+            scale: 2,
+            // 不要截到 markersContainer 之外的东西 (如搜索栏 overlay), 但 mapWrapper 本身已经只装地图
+            logging: false,
+            useCORS: true,
+            allowTaint: false
+        });
+    } finally {
+        // 恢复 scale/translate/transform
+        if (savedState) {
+            scale = savedState.scale;
+            translateX = savedState.translateX;
+            translateY = savedState.translateY;
+            mapImage.style.transform = savedState.mapImageTransform;
+            scheduleTransform();
+        }
+    }
+
+    const visibleMarkers = getVisibleMarkers();
+
+    return {
+        canvas,
+        visibleMarkers,
+        outW: canvas.width,
+        outH: canvas.height,
+        range
+    };
+}
+
+// ============ JPG 导出 ============
+// 把 canvas 编码为 JPEG 并触发下载
+function exportAsJpg(exportData) {
+    return new Promise((resolve, reject) => {
+        exportData.canvas.toBlob(blob => {
+            if (!blob) return reject(new Error('canvas 编码失败'));
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            a.href = url;
+            a.download = `office-map-${ts}.jpg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            resolve();
+        }, 'image/jpeg', 0.92);
+    });
+}
+
+// ============ 主入口 ============
+async function performExport() {
+    const range = exportRange;
+
+    const confirmBtn = document.getElementById('exportConfirmBtn');
+    const cancelBtn = document.getElementById('exportCancelBtn');
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    setExportStatus('正在准备...');
+
+    try {
+        // 让浏览器有 50ms 重绘, 让用户看到 "准备中" 状态
+        await new Promise(r => setTimeout(r, 50));
+
+        setExportStatus('正在加载图标...');
+        await new Promise(r => setTimeout(r, 50));
+
+        const exportData = await renderExportCanvas(range);
+        const markerCount = exportData.visibleMarkers.length;
+
+        setExportStatus(`正在生成 JPG (${exportData.outW}×${exportData.outH}, ${markerCount} 个标记)...`);
+        await new Promise(r => setTimeout(r, 50));
+        await exportAsJpg(exportData);
+
+        setExportStatus(`✓ 导出完成 (${markerCount} 个标记)`, 'success');
+        setTimeout(() => closeExportModal(), 1500);
+    } catch (err) {
+        console.error('Export failed:', err);
+        setExportStatus(`✗ 导出失败: ${err.message}`, 'error');
+    } finally {
+        confirmBtn.disabled = false;
+        cancelBtn.disabled = false;
+    }
+}
+
+// 绑定导出按钮事件
+function setupExportButton() {
+    const btn = document.getElementById('exportBtn');
+    const modal = document.getElementById('exportModal');
+    const cancelBtn = document.getElementById('exportCancelBtn');
+    const confirmBtn = document.getElementById('exportConfirmBtn');
+    const rangeGrid = document.getElementById('exportRangeGrid');
+
+    btn.addEventListener('click', openExportModal);
+    cancelBtn.addEventListener('click', closeExportModal);
+    confirmBtn.addEventListener('click', performExport);
+
+    // 点击 backdrop 关闭
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeExportModal();
+    });
+
+    // 范围选择
+    rangeGrid.addEventListener('click', (e) => {
+        const card = e.target.closest('.export-range-card');
+        if (!card) return;
+        exportRange = card.dataset.range;
+        rangeGrid.querySelectorAll('.export-range-card').forEach(c => c.classList.toggle('selected', c === card));
+    });
+}
+
 // Initialize app
 init();
+setupExportButton();
+
