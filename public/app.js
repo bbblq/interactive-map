@@ -554,11 +554,21 @@ function renderCategories() {
             </button>
           </div>
           <div class="category-items ${isExpanded ? 'expanded' : ''}" id="category-${key}">
-            ${markers.filter(m => m.category === key).map(m => `
+            ${markers.filter(m => (m.category || 'other') === key).map(m => {
+                let displayName = m.label;
+                if (m.type === 'text') {
+                    displayName = m.content || m.label || '(未命名文字)';
+                } else if (m.type === 'shape') {
+                    const shapeNames = { rect: '矩形', circle: '圆形', arrow: '箭头' };
+                    displayName = m.label || `(${shapeNames[m.shape] || '形状'})`;
+                } else {
+                    displayName = m.label || '(未命名)';
+                }
+                return `
               <div class="category-item" onclick="focusMarker('${m.id}')">
-                ${m.label}
+                ${escapeHtml(displayName)}
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
         </div>
       `;
