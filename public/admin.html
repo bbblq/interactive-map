@@ -391,6 +391,13 @@
                                     <span class="type-option-label">图标标记</span>
                                 </span>
                             </label>
+                            <label class="type-option">
+                                <input type="radio" name="markerType" value="shape">
+                                <span class="type-option-content">
+                                    <span class="type-option-icon">▭</span>
+                                    <span class="type-option-label">形状标记</span>
+                                </span>
+                            </label>
                         </div>
                     </div>
 
@@ -447,7 +454,10 @@
                     <div id="iconMarkerSettings" class="marker-settings" style="display: none;">
                         <div class="form-group">
                             <label>图标类型 *</label>
-                            <select id="iconCategory" required>
+                            <!-- 网格选择器: 每张卡片显示 SVG + 名称, 点击选中. 真实视觉选, 不用先点开下拉 -->
+                            <div id="iconCategoryGrid" class="icon-category-grid"></div>
+                            <!-- 隐藏的 select 保留 (兼容表单序列化/required 验证/旧逻辑), 跟 grid 双向同步 -->
+                            <select id="iconCategory" required style="display: none;">
                                 <option value="person">👤 人员</option>
                                 <option value="printer">🖨️ 打印机</option>
                                 <option value="water">💧 饮水机</option>
@@ -568,6 +578,99 @@
                         </div>
                     </div>
 
+                    <!-- 形状标记专属设置 -->
+                    <div id="shapeMarkerSettings" class="marker-settings" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>形状类型 *</label>
+                                <select id="shapeType" required>
+                                    <option value="rect">▭ 矩形</option>
+                                    <option value="circle">● 圆形</option>
+                                    <option value="arrow">▶ 箭头</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>分类</label>
+                                <select id="shapeCategory">
+                                    <option value="other">其他</option>
+                                    <option value="person">人员</option>
+                                    <option value="meeting">会议室</option>
+                                    <option value="server">机房</option>
+                                    <option value="printer">打印机</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 箭头专属设置 (只在 shapeType=arrow 时显示) -->
+                        <div id="arrowOnlySettings">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>箭头样式 *</label>
+                                    <select id="arrowStyle">
+                                        <option value="solid">▶ 实心粗</option>
+                                        <option value="thin">▷ 细长</option>
+                                        <option value="double">⇄ 双向</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>锚点位置 *</label>
+                                    <select id="arrowAnchor">
+                                        <option value="tip" selected>▶ 尖端 (拖动时鼠标停哪尖就到哪)</option>
+                                        <option value="center">● 中心 (跟其他形状一致)</option>
+                                        <option value="tail">◀ 尾部 (鼠标停尾尖就到尾巴)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>填充颜色</label>
+                                <input type="color" id="fillColor" value="#4a90e2" class="color-swatch">
+                            </div>
+                            <div class="form-group">
+                                <label>填充不透明度: <span id="fillColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="fillColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>描边颜色</label>
+                                <input type="color" id="strokeColor" value="#222222" class="color-swatch">
+                            </div>
+                            <div class="form-group">
+                                <label>描边不透明度: <span id="strokeColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="strokeColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
+                            </div>
+                            <div class="form-group">
+                                <label>描边宽度 (源图像素)</label>
+                                <input type="number" id="strokeWidth" value="2" min="0" max="50" step="0.5">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>名称 (可选, 显示在侧边栏列表)</label>
+                            <input type="text" id="shapeLabel" placeholder="如: 会议室 A">
+                        </div>
+
+                        <div class="form-group">
+                            <label>描述 (可选)</label>
+                            <textarea id="markerDescription" rows="2" placeholder="纯文本描述 (区别于下面的富文本详情)"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>详情 (可选, 富文本)</label>
+                            <div class="rich-editor-toolbar">
+                                <button type="button" onclick="document.execCommand('bold')" title="加粗"><b>B</b></button>
+                                <button type="button" onclick="document.execCommand('italic')" title="斜体"><i>I</i></button>
+                                <button type="button" onclick="document.execCommand('underline')" title="下划线"><u>U</u></button>
+                                <button type="button" onclick="insertLink()" title="插入链接">🔗</button>
+                            </div>
+                            <div id="textDetails" class="rich-editor" contenteditable="true" style="min-height: 60px;"></div>
+                        </div>
+                    </div>
+
                     <!-- Hidden field for marker scale -->
                     <input type="hidden" id="markerScale" value="1.0">
 
@@ -601,6 +704,10 @@
                         <div class="form-group">
                             <label>图标颜色</label>
                             <input type="color" id="iconTypeColor" value="#4a90e2">
+                        </div>
+                        <div class="form-group">
+                            <label>文字颜色</label>
+                            <input type="color" id="iconTypeTextColor" value="#333333">
                         </div>
                         <div class="form-group">
                             <label>背景颜色</label>
@@ -695,9 +802,13 @@
             <span class="context-menu-icon">📍</span>
             <span class="context-menu-label">添加图标标记</span>
         </div>
+        <div class="context-menu-item" data-action="add-shape">
+            <span class="context-menu-icon">▭</span>
+            <span class="context-menu-label">添加形状标记</span>
+        </div>
     </div>
 
-    <script src="admin.js?v=3"></script>
+    <script src="admin.js?v=13"></script>
 </body>
 
 </html>

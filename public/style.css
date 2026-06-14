@@ -744,6 +744,20 @@ body {
   z-index: 100;
 }
 
+/* 形状标记样式 (rect / circle / arrow) */
+.marker-shape {
+  cursor: pointer;
+  /* 形状标记无 box-shadow 边框, 内部 SVG 撑满 100%×100%, vector-effect=non-scaling-stroke
+     让描边在任意缩放级别下都保持源图设定的 px 宽度, 不会变细/变粗 */
+}
+.marker-shape .shape-svg {
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+}
+.marker-shape:hover .shape-svg {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
 .marker-text-only .text-label {
   background: rgba(255, 255, 255, 0.95);
   color: var(--text-primary);

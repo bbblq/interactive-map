@@ -26,7 +26,7 @@
       <div id="searchResults" class="search-results"></div>
     </div>
     <div class="header-actions" style="display:flex;gap:8px;align-items:center;margin-left:12px;">
-      <button id="exportBtn" class="btn btn-secondary" title="导出当前可见地图为 JPG 图片" style="white-space:nowrap;">⬇ 导出</button>
+      <button id="exportBtn" class="btn btn-secondary" title="导出地图 (JPG / PDF)" style="white-space:nowrap;">⬇ 导出</button>
     </div>
   </header>
 
@@ -107,6 +107,11 @@
             <div class="label">JPG 图片</div>
             <div class="desc">光栅位图, 不可搜索</div>
           </div>
+          <div class="export-format-card" data-format="pdf">
+            <span class="icon">📄</span>
+            <div class="label">PDF 文档</div>
+            <div class="desc">矢量图标, 文字可搜索</div>
+          </div>
         </div>
       </div>
 
@@ -133,8 +138,10 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2/dist/svg2pdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=18"></script>
 </body>
 
 </html>

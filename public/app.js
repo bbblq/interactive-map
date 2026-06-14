@@ -1006,6 +1006,7 @@ function getCenter(touch1, touch2) {
 //   - 高分辨率原图 (e.g. 4000x3000) 画到 canvas 可能 OOM, 需要降采样
 
 let exportRange = 'viewport';
+let exportFormat = 'jpg';
 
 function openExportModal() {
     document.getElementById('exportModal').classList.add('active');
@@ -1125,10 +1126,287 @@ function exportAsJpg(exportData) {
     });
 }
 
+// ============ PDF 导出 ============
+// 三层结构: 地图底图(位图) + SVG图标(矢量) / 上传图标(位图) + 文字标签(可搜索文字层)
+
+let pdfFontBase64 = null;
+let pdfFontName = 'Helvetica';
+
+function arrayBufferToBase64(buffer) {
+    const uint8 = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let i = 0; i < uint8.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, uint8.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+}
+
+async function loadPdfFont() {
+    if (pdfFontBase64) return;
+    try {
+        const resp = await fetch('/fonts/NotoSansSC-Regular.ttf');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const ab = await resp.arrayBuffer();
+        pdfFontBase64 = arrayBufferToBase64(ab);
+    } catch (e) {
+        console.warn('PDF: 中文字体加载失败, 将使用内置字体', e);
+    }
+}
+
+function registerPdfFont(doc) {
+    if (!pdfFontBase64) { pdfFontName = 'Helvetica'; doc.setFont('Helvetica'); return; }
+    try {
+        doc.addFileToVFS('NotoSansSC-Regular.ttf', pdfFontBase64);
+        doc.addFont('NotoSansSC-Regular.ttf', 'NotoSansSC', 'normal');
+        doc.setFont('NotoSansSC');
+        pdfFontName = 'NotoSansSC';
+    } catch (e) {
+        console.warn('PDF: 字体注册失败', e);
+        pdfFontName = 'Helvetica'; doc.setFont('Helvetica');
+    }
+}
+
+function loadImageAsync(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = url;
+    });
+}
+
+function applyPdfColor(doc, colorStr, type) {
+    if (!colorStr || colorStr === 'transparent') {
+        doc.setGState(new doc.GState({opacity: 0}));
+        return;
+    }
+    let r = 0, g = 0, b = 0, a = 1.0;
+    if (colorStr.startsWith('#')) {
+        let hex = colorStr.substring(1);
+        if (hex.length === 3 || hex.length === 4) hex = hex.split('').map(c => c + c).join('');
+        if (hex.length >= 6) {
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+            if (hex.length === 8) a = parseInt(hex.substring(6, 8), 16) / 255;
+        }
+    } else if (colorStr.startsWith('rgba') || colorStr.startsWith('rgb')) {
+        const parts = colorStr.match(/[\d.]+/g);
+        if (parts && parts.length >= 3) {
+            r = parseInt(parts[0], 10);
+            g = parseInt(parts[1], 10);
+            b = parseInt(parts[2], 10);
+            if (parts.length >= 4) a = parseFloat(parts[3]);
+        }
+    } else {
+        if (type === 'fill') doc.setFillColor(colorStr);
+        else if (type === 'draw') doc.setDrawColor(colorStr);
+        else doc.setTextColor(colorStr);
+        doc.setGState(new doc.GState({opacity: 1}));
+        return;
+    }
+    
+    if (type === 'fill') doc.setFillColor(r, g, b);
+    else if (type === 'draw') doc.setDrawColor(r, g, b);
+    else doc.setTextColor(r, g, b);
+    
+    doc.setGState(new doc.GState({opacity: a}));
+}
+
+async function drawSvgToPdf(doc, svgString, x, y, width, height, color) {
+    if (!doc.svg) { console.warn('PDF: svg2pdf.js 未加载'); return; }
+    let svg = svgString;
+    if (color) svg = svg.replace(/currentColor/g, color);
+    if (!svg.includes('xmlns=')) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svg, 'image/svg+xml');
+    if (svgDoc.querySelector('parsererror')) { console.warn('PDF: SVG 解析失败'); return; }
+    const svgEl = svgDoc.documentElement;
+    svgEl.setAttribute('width', String(width));
+    svgEl.setAttribute('height', String(height));
+    try { await doc.svg(svgEl, { x, y, width, height }); } catch (e) { console.warn('PDF: SVG 渲染失败', e); }
+}
+
+async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
+    const markerScale = marker.scale || 1.0;
+    const type = iconTypes[marker.category] || iconTypes.other || {};
+    const baseUnit = markerScale * sizeMul;
+    const iconSize = MARKER_BASE_SIZE * baseUnit;
+    const fontSize = Math.max(6, MARKER_FONT_BASE * baseUnit);
+    const padding = 4 * baseUnit;
+    const hasLabel = marker.showLabel !== false && marker.label;
+    const bgColor = type.bgColor || '#f8f9fa';
+    const isTransparent = bgColor === 'transparent';
+    const iconColor = (type && type.color) ? type.color : '#9e9e9e';
+    const textColor = type.textColor || '#333333';
+
+    doc.setFont(pdfFontName);
+    doc.setFontSize(fontSize);
+    const labelText = marker.label || '';
+    const labelWidth = hasLabel ? doc.getTextWidth(labelText) : 0;
+    const labelPadLeft = hasLabel ? 4 * baseUnit : 0;
+    const labelPadRight = hasLabel ? 10 * baseUnit : 0;
+
+    const capsuleW = padding + iconSize + (hasLabel ? labelPadLeft + labelWidth + labelPadRight : padding);
+    const capsuleH = iconSize + 2 * padding;
+    const borderRadius = Math.min(capsuleH / 2, 30 * baseUnit);
+    const capsuleX = mx - capsuleW / 2;
+    const capsuleY = my - capsuleH;
+
+    if (!isTransparent) {
+        applyPdfColor(doc, bgColor, 'fill');
+        doc.roundedRect(capsuleX, capsuleY, capsuleW, capsuleH, borderRadius, borderRadius, 'F');
+        doc.setGState(new doc.GState({opacity: 1}));
+        
+        applyPdfColor(doc, 'rgba(200,200,200,0.5)', 'draw');
+        doc.setLineWidth(0.5);
+        doc.roundedRect(capsuleX, capsuleY, capsuleW, capsuleH, borderRadius, borderRadius, 'S');
+        doc.setGState(new doc.GState({opacity: 1}));
+    }
+
+    const iconX = capsuleX + padding;
+    const iconY = capsuleY + padding;
+
+    if (type.imageUrl) {
+        try {
+            const img = await loadImageAsync(type.imageUrl);
+            doc.addImage(img, 'PNG', iconX, iconY, iconSize, iconSize);
+        } catch (e) { console.warn('PDF: 自定义图标加载失败:', type.imageUrl); }
+    } else {
+        const svgKey = (type && type.icon) ? type.icon : 'other';
+        const svgStr = SVG_ICONS[svgKey] || SVG_ICONS.other;
+        if (svgStr) await drawSvgToPdf(doc, svgStr, iconX, iconY, iconSize, iconSize, iconColor);
+    }
+
+    if (hasLabel) {
+        doc.setFont(pdfFontName);
+        doc.setFontSize(fontSize);
+        applyPdfColor(doc, textColor, 'text');
+        const textX = iconX + iconSize + labelPadLeft;
+        const textY = capsuleY + capsuleH / 2;
+        doc.text(labelText, textX, textY, { baseline: 'middle' });
+        doc.setGState(new doc.GState({opacity: 1}));
+    }
+}
+
+async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
+    const markerScale = marker.scale || 1.0;
+    const baseW = (marker.width || (48 * markerScale)) * sizeMul;
+    const baseH = (marker.height || (32 * markerScale)) * sizeMul;
+    const fontSize = Math.max(6, (marker.fontSize || 14) * sizeMul);
+    const rectX = mx - baseW / 2;
+    const rectY = my - baseH / 2;
+
+    const bgColor = marker.bgColor || '';
+    if (bgColor && bgColor !== 'transparent') {
+        applyPdfColor(doc, bgColor, 'fill');
+        doc.rect(rectX, rectY, baseW, baseH, 'F');
+        doc.setGState(new doc.GState({opacity: 1}));
+    }
+    const borderColor = marker.borderColor || '';
+    const borderWidth = (marker.borderWidth != null) ? marker.borderWidth * sizeMul : sizeMul;
+    if (borderColor && borderColor !== 'transparent' && borderWidth > 0) {
+        applyPdfColor(doc, borderColor, 'draw');
+        doc.setLineWidth(borderWidth);
+        doc.rect(rectX, rectY, baseW, baseH, 'S');
+        doc.setGState(new doc.GState({opacity: 1}));
+    }
+    const content = marker.content || marker.label || '';
+    const textColor = marker.textColor || '#333333';
+    if (content) {
+        doc.setFont(pdfFontName);
+        doc.setFontSize(fontSize);
+        applyPdfColor(doc, textColor, 'text');
+        doc.text(content, mx, my, { align: 'center', baseline: 'middle' });
+        doc.setGState(new doc.GState({opacity: 1}));
+    }
+}
+
+async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul) {
+    const markerScale = marker.scale || 1.0;
+    const baseW = (marker.width || (48 * markerScale)) * sizeMul;
+    const baseH = (marker.height || (32 * markerScale)) * sizeMul;
+    const shapeX = mx - baseW / 2;
+    const shapeY = my - baseH / 2;
+    const svgString = buildShapeSvg(marker);
+    if (svgString) await drawSvgToPdf(doc, svgString, shapeX, shapeY, baseW, baseH, null);
+}
+
+async function exportAsPdf(range) {
+    if (!mapImg.naturalWidth) throw new Error('地图未加载');
+    if (!window.jspdf) throw new Error('jsPDF 库未加载, 请检查网络连接');
+    const { jsPDF } = window.jspdf;
+    const srcW = mapImg.naturalWidth;
+    const srcH = mapImg.naturalHeight;
+    const sizeMul = globalMarkerSizeMultiplier || 1.0;
+
+    let pdfW, pdfH, offsetX = 0, offsetY = 0;
+    if (range === 'full') {
+        pdfW = srcW; pdfH = srcH;
+    } else {
+        const wrapperW = mapWrapper.offsetWidth;
+        const wrapperH = mapWrapper.offsetHeight;
+        const vx = Math.max(0, -translateX / scale);
+        const vy = Math.max(0, -translateY / scale);
+        const vx2 = Math.min(srcW, (-translateX + wrapperW) / scale);
+        const vy2 = Math.min(srcH, (-translateY + wrapperH) / scale);
+        pdfW = vx2 - vx; pdfH = vy2 - vy;
+        offsetX = vx; offsetY = vy;
+    }
+    if (pdfW <= 0 || pdfH <= 0) throw new Error('可见区域为空');
+
+    const doc = new jsPDF({
+        orientation: pdfW > pdfH ? 'landscape' : 'portrait',
+        unit: 'pt', format: [pdfW, pdfH], compress: true
+    });
+    registerPdfFont(doc);
+
+    // Layer 1: background
+    setExportStatus('正在绘制地图底图...');
+    await new Promise(r => setTimeout(r, 30));
+    try {
+        const bgCanvas = document.createElement('canvas');
+        if (range === 'full') {
+            bgCanvas.width = srcW; bgCanvas.height = srcH;
+            bgCanvas.getContext('2d').drawImage(mapImg, 0, 0, srcW, srcH);
+        } else {
+            bgCanvas.width = Math.round(pdfW); bgCanvas.height = Math.round(pdfH);
+            bgCanvas.getContext('2d').drawImage(mapImg, offsetX, offsetY, pdfW, pdfH, 0, 0, Math.round(pdfW), Math.round(pdfH));
+        }
+        doc.addImage(bgCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pdfW, pdfH);
+    } catch (e) { console.warn('PDF: 地图底图绘制失败', e); }
+
+    // Layer 2+3: markers
+    const visibleMarkers = getVisibleMarkers();
+    const total = visibleMarkers.length;
+    let drawn = 0;
+    for (const marker of visibleMarkers) {
+        const mx = marker.x - offsetX;
+        const my = marker.y - offsetY;
+        if (mx < -300 || mx > pdfW + 300 || my < -300 || my > pdfH + 300) continue;
+        try {
+            if (marker.type === 'text') await drawTextMarkerPdf(doc, marker, mx, my, sizeMul);
+            else if (marker.type === 'shape') await drawShapeMarkerPdf(doc, marker, mx, my, sizeMul);
+            else await drawIconMarkerPdf(doc, marker, mx, my, sizeMul);
+            drawn++;
+            if (drawn % 10 === 0) {
+                setExportStatus(`正在绘制标记 (${drawn}/${total})...`);
+                await new Promise(r => setTimeout(r, 10));
+            }
+        } catch (e) { console.warn('PDF: 标记绘制失败:', marker.id, e); }
+    }
+
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    doc.save(`office-map-${ts}.pdf`);
+    return { visibleMarkers, outW: Math.round(pdfW), outH: Math.round(pdfH) };
+}
+
 // ============ 主入口 ============
 async function performExport() {
     const range = exportRange;
-
+    const format = exportFormat;
     const confirmBtn = document.getElementById('exportConfirmBtn');
     const cancelBtn = document.getElementById('exportCancelBtn');
     confirmBtn.disabled = true;
@@ -1136,20 +1414,26 @@ async function performExport() {
     setExportStatus('正在准备...');
 
     try {
-        // 让浏览器有 50ms 重绘, 让用户看到 "准备中" 状态
         await new Promise(r => setTimeout(r, 50));
-
-        setExportStatus('正在加载图标...');
-        await new Promise(r => setTimeout(r, 50));
-
-        const exportData = await renderExportCanvas(range);
-        const markerCount = exportData.visibleMarkers.length;
-
-        setExportStatus(`正在生成 JPG (${exportData.outW}×${exportData.outH}, ${markerCount} 个标记)...`);
-        await new Promise(r => setTimeout(r, 50));
-        await exportAsJpg(exportData);
-
-        setExportStatus(`✓ 导出完成 (${markerCount} 个标记)`, 'success');
+        if (format === 'pdf') {
+            setExportStatus('正在加载字体...');
+            await loadPdfFont();
+            await new Promise(r => setTimeout(r, 50));
+            setExportStatus('正在生成 PDF...');
+            await new Promise(r => setTimeout(r, 50));
+            const result = await exportAsPdf(range);
+            const mc = result.visibleMarkers.length;
+            setExportStatus(`✓ PDF 导出完成 (${result.outW}×${result.outH}, ${mc} 个标记)`, 'success');
+        } else {
+            setExportStatus('正在加载图标...');
+            await new Promise(r => setTimeout(r, 50));
+            const exportData = await renderExportCanvas(range);
+            const mc = exportData.visibleMarkers.length;
+            setExportStatus(`正在生成 JPG (${exportData.outW}×${exportData.outH}, ${mc} 个标记)...`);
+            await new Promise(r => setTimeout(r, 50));
+            await exportAsJpg(exportData);
+            setExportStatus(`✓ 导出完成 (${mc} 个标记)`, 'success');
+        }
         setTimeout(() => closeExportModal(), 1500);
     } catch (err) {
         console.error('Export failed:', err);
@@ -1167,6 +1451,7 @@ function setupExportButton() {
     const cancelBtn = document.getElementById('exportCancelBtn');
     const confirmBtn = document.getElementById('exportConfirmBtn');
     const rangeGrid = document.getElementById('exportRangeGrid');
+    const formatGrid = document.getElementById('exportFormatGrid');
 
     btn.addEventListener('click', openExportModal);
     cancelBtn.addEventListener('click', closeExportModal);
@@ -1176,6 +1461,16 @@ function setupExportButton() {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeExportModal();
     });
+
+    // 格式选择 (JPG / PDF)
+    if (formatGrid) {
+        formatGrid.addEventListener('click', (e) => {
+            const card = e.target.closest('.export-format-card');
+            if (!card) return;
+            exportFormat = card.dataset.format;
+            formatGrid.querySelectorAll('.export-format-card').forEach(c => c.classList.toggle('selected', c === card));
+        });
+    }
 
     // 范围选择
     rangeGrid.addEventListener('click', (e) => {

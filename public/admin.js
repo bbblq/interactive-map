@@ -107,8 +107,51 @@ const SVG_ICONS = {
     person: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M5.5 21v-2a7.5 7.5 0 0115 0v2"/></svg>`,
     meeting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>`,
     coffee: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg>`,
-    other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`
+    other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
+    // 无线 AP: 中心点 + 左右 2 道信号弧 (经典 AP 图标)
+    wifi: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 5.5a10 10 0 0 0 0 13"/><path d="M18.5 5.5a10 10 0 0 1 0 13"/></svg>`,
+    // 摄像头: 方形机身 + 右侧镜头 (Feather video)
+    camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`
 };
+
+// 形状标记: 生成 SVG 几何形状 (rect / circle / arrow)
+// 跟 app.js buildShapeSvg 保持一致, 字段: shape, fillColor, strokeColor, strokeWidth
+// 箭头额外字段: arrowStyle, anchor
+// vector-effect="non-scaling-stroke" 让描边宽度不被等比缩放撑大
+const ARROW_PRESETS_EDITOR = {
+    solid: '0,15 70,15 70,0 100,50 70,100 70,85 0,85',
+    thin: '0,40 70,40 70,15 100,50 70,85 70,60 0,60',
+    double: '0,50 15,15 35,15 35,0 65,0 65,15 85,15 100,50 85,85 65,85 65,100 35,100 35,85 15,85'
+};
+
+function buildEditorShapeSvg(marker) {
+    const shape = marker.shape || 'rect';
+    const fill = marker.fillColor || '#4a90e2';
+    const stroke = marker.strokeColor || '#222222';
+    const sw = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+
+    if (shape === 'circle') {
+        return `<svg class="shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">
+            <ellipse cx="50" cy="50" rx="50" ry="50" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />
+        </svg>`;
+    }
+    if (shape === 'arrow') {
+        const arrowStyle = marker.arrowStyle || 'solid';
+        const points = ARROW_PRESETS_EDITOR[arrowStyle] || ARROW_PRESETS_EDITOR.solid;
+        const anchor = marker.anchor || 'tip';
+        let gTransform = '';
+        if (anchor === 'tip') gTransform = 'translate(-50, 0)';
+        else if (anchor === 'tail') gTransform = 'translate(50, 0)';
+        return `<svg class="shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;">
+            <g transform="${gTransform}">
+                <polygon points="${points}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            </g>
+        </svg>`;
+    }
+    return `<svg class="shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">
+        <rect x="0" y="0" width="100" height="100" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" />
+    </svg>`;
+}
 
 // Default Icon Types Configuration
 const DEFAULT_ICON_TYPES = {
@@ -569,6 +612,12 @@ function setupAdminListeners() {
     setupColorPicker('textColor', 'textColorAlpha', 'textColorAlphaLabel');
     setupColorPicker('bgColor', 'bgColorAlpha', 'bgColorAlphaLabel');
     setupColorPicker('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel');
+    setupColorPicker('fillColor', 'fillColorAlpha', 'fillColorAlphaLabel');
+    setupColorPicker('strokeColor', 'strokeColorAlpha', 'strokeColorAlphaLabel');
+
+    // 形状类型切换: 箭头时显示箭头专属设置
+    const shapeTypeEl = document.getElementById('shapeType');
+    if (shapeTypeEl) shapeTypeEl.addEventListener('change', updateArrowOnlyVisibility);
 
     // 弹窗占据焦点, 不再因点�?backdrop 关闭, 避免误操作丢失未保存内容.
     // 如需关闭请使用右上角 X 按钮或底部取�?保存按钮.
@@ -832,6 +881,7 @@ function updateEditorMarkerScales() {
         const markerScale = marker.scale || 1.0;
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
+        const isShape = marker.type === 'shape';
 
         // 屏幕像素位置
         const screenX = editorTranslateX + marker.x * editorScale;
@@ -839,20 +889,22 @@ function updateEditorMarkerScales() {
         markerEl.style.left = screenX + 'px';
         markerEl.style.top = screenY + 'px';
 
-        if (isText) {
-            // 文字标记: 自由尺寸, 边长和字体跟随地图缩放
+        if (isText || isShape) {
+            // 文字 / 形状标记: 自由尺寸, 边长跟随地图缩放
             const baseW = marker.width || (48 * markerScale);
             const baseH = marker.height || (32 * markerScale);
             const w = baseW * editorScale * sizeMul;
             const h = baseH * editorScale * sizeMul;
-            
+
             markerEl.style.width = w + 'px';
             markerEl.style.height = h + 'px';
-            
-            const label = markerEl.querySelector('.text-label');
-            if (label) {
-                const fontPx = Math.max(4, (marker.fontSize || 14) * editorScale * sizeMul);
-                label.style.fontSize = fontPx + 'px';
+
+            if (isText) {
+                const label = markerEl.querySelector('.text-label');
+                if (label) {
+                    const fontPx = Math.max(4, (marker.fontSize || 14) * editorScale * sizeMul);
+                    label.style.fontSize = fontPx + 'px';
+                }
             }
             markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
         } else {
@@ -1123,6 +1175,10 @@ function renderEditorMarkers() {
             markerEl.innerHTML = `
                 <div class="text-label" style="${textStyle}">${escapeHtml(marker.content || marker.label || '')}</div>
             `;
+        } else if (markerType === 'shape') {
+            // 形状标记: SVG 几何形状 (rect / circle / arrow)
+            markerEl.className = 'marker marker-shape';
+            markerEl.innerHTML = buildEditorShapeSvg(marker);
         } else {
             // 图标标记
             const showIcon = marker.showIcon !== false;
@@ -1136,7 +1192,8 @@ function renderEditorMarkers() {
             const isTransparent = bgColor === 'transparent';
             const shadowStyle = isTransparent ? '' : 'box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid rgba(0,0,0,0.05);';
             const bgStyle = `background: ${bgColor};`;
-            const textColor = isTransparent || bgColor === '#ffffff' || bgColor === '#fff' ? '#333' : '#333';
+            // 文字颜色: 优先用 iconTypes 里配置的 textColor, 缺省 #333
+            const textColor = type.textColor || '#333';
 
             markerEl.innerHTML = `
                 <div class="marker-capsule" style="
@@ -1211,10 +1268,13 @@ function renderMarkersList() {
     }
 
     markersList.innerHTML = markers.map(marker => {
-        // 文字标记�?content, 图标标记�?label, 都为空时退到一个占位符, 避免显示 "undefined"
+        // 文字标记: content, 形状标记: label+shape, 图标标记: label, 都为空时退到占位符
+        const shapeNames = { rect: '矩形', circle: '圆形', arrow: '箭头' };
         const displayName = (marker.type === 'text')
-            ? (marker.content || marker.label || '(未命名文�?')
-            : (marker.label || '(未命�?');
+            ? (marker.content || marker.label || '(未命名文字)')
+            : (marker.type === 'shape')
+                ? (marker.label || `(${shapeNames[marker.shape] || '形状'})`)
+                : (marker.label || '(未命名)');
         return `
     <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}"
          data-id="${marker.id}"
@@ -1362,6 +1422,19 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
             setColorPickerValue('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel', marker.borderColor || '#cccccc');
             document.getElementById('borderWidth').value = marker.borderWidth || 1;
             document.getElementById('textDetails').innerHTML = marker.details || '';
+        } else if (markerType === 'shape') {
+            // 形状标记
+            document.getElementById('shapeCategory').value = marker.category || 'other';
+            document.getElementById('shapeType').value = marker.shape || 'rect';
+            document.getElementById('arrowStyle').value = marker.arrowStyle || 'solid';
+            document.getElementById('arrowAnchor').value = marker.anchor || 'tip';
+            setColorPickerValue('fillColor', 'fillColorAlpha', 'fillColorAlphaLabel', marker.fillColor || '#4a90e2');
+            setColorPickerValue('strokeColor', 'strokeColorAlpha', 'strokeColorAlphaLabel', marker.strokeColor || '#222222ff');
+            document.getElementById('strokeWidth').value = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+            document.getElementById('shapeLabel').value = marker.label || '';
+            document.getElementById('markerDescription').value = marker.description || '';
+            document.getElementById('textDetails').innerHTML = marker.details || '';
+            updateArrowOnlyVisibility();
         } else {
             // 图标标记
             document.getElementById('iconCategory').value = marker.category || 'other';
@@ -1468,6 +1541,27 @@ async function saveMarker(e) {
             width: originalMarker ? originalMarker.width : undefined,
             height: originalMarker ? originalMarker.height : undefined
         };
+    } else if (markerType === 'shape') {
+        // 形状标记数据
+        const shapeTypeVal = document.getElementById('shapeType').value;
+        markerData = {
+            ...baseData,
+            category: document.getElementById('shapeCategory').value,
+            shape: shapeTypeVal,
+            label: document.getElementById('shapeLabel').value,
+            fillColor: getColorPickerValue('fillColor', 'fillColorAlpha'),
+            strokeColor: getColorPickerValue('strokeColor', 'strokeColorAlpha'),
+            strokeWidth: parseFloat(document.getElementById('strokeWidth').value) || 0,
+            description: document.getElementById('markerDescription').value,
+            details: document.getElementById('textDetails').innerHTML,
+            width: originalMarker ? originalMarker.width : undefined,
+            height: originalMarker ? originalMarker.height : undefined
+        };
+        // 箭头专属字段
+        if (shapeTypeVal === 'arrow') {
+            markerData.arrowStyle = document.getElementById('arrowStyle').value;
+            markerData.anchor = document.getElementById('arrowAnchor').value;
+        }
     } else {
         // 图标标记数据
         markerData = {
@@ -1586,7 +1680,15 @@ window.copyMarker = function (markerId) {
         rotation: marker.rotation || 0,
         zIndex: marker.zIndex || 0,
         width: marker.width,
-        height: marker.height
+        height: marker.height,
+        // 形状标记字段
+        shape: marker.shape,
+        fillColor: marker.fillColor,
+        strokeColor: marker.strokeColor,
+        strokeWidth: marker.strokeWidth,
+        // 箭头专属字段
+        arrowStyle: marker.arrowStyle,
+        anchor: marker.anchor
     };
 
     hasCopiedData = true;
@@ -1812,6 +1914,9 @@ function handleContextMenuClick(e) {
         case 'add-marker':
             openMarkerForm(null, contextMenuX, contextMenuY, 'icon');
             break;
+        case 'add-shape':
+            openMarkerForm(null, contextMenuX, contextMenuY, 'shape');
+            break;
         case 'edit-marker':
             if (contextMenuTargetMarkerId) {
                 openMarkerForm(contextMenuTargetMarkerId);
@@ -1830,19 +1935,31 @@ function handleMarkerTypeChange(e) {
     const markerType = e.target.value;
     const textSettings = document.getElementById('textMarkerSettings');
     const iconSettings = document.getElementById('iconMarkerSettings');
+    const shapeSettings = document.getElementById('shapeMarkerSettings');
     const iconExtraInfo = document.getElementById('iconExtraInfo');
 
     if (markerType === 'text') {
         textSettings.style.display = 'block';
         iconSettings.style.display = 'none';
+        shapeSettings.style.display = 'none';
         iconExtraInfo.style.display = 'none';
         // 文字标记的必填字�?
         document.getElementById('textContent').required = true;
         document.getElementById('iconCategory').required = false;
         document.getElementById('iconLabel').required = false;
+    } else if (markerType === 'shape') {
+        textSettings.style.display = 'none';
+        iconSettings.style.display = 'none';
+        shapeSettings.style.display = 'block';
+        iconExtraInfo.style.display = 'none';
+        document.getElementById('textContent').required = false;
+        document.getElementById('iconCategory').required = false;
+        document.getElementById('iconLabel').required = false;
+        updateArrowOnlyVisibility();
     } else {
         textSettings.style.display = 'none';
         iconSettings.style.display = 'block';
+        shapeSettings.style.display = 'none';
         iconExtraInfo.style.display = 'block';
         // 图标标记的必填字�?
         document.getElementById('textContent').required = false;
@@ -1851,13 +1968,24 @@ function handleMarkerTypeChange(e) {
     }
 }
 
+// 箭头专属设置: 只在 shapeType=arrow 时显示
+function updateArrowOnlyVisibility() {
+    const arrowOnly = document.getElementById('arrowOnlySettings');
+    if (!arrowOnly) return;
+    const shapeType = document.getElementById('shapeType').value;
+    arrowOnly.style.display = (shapeType === 'arrow') ? 'block' : 'none';
+}
+
 // Update marker icon preview in form
 function updateMarkerIconPreview() {
-    const category = document.getElementById('iconCategory').value;
+    const select = document.getElementById('iconCategory');
+    const category = select ? select.value : '';
     const preview = document.getElementById('markerIconPreview');
     if (preview) {
         preview.innerHTML = getMarkerIconSVG(category);
     }
+    // 同步网格选中态 (编辑/粘贴/新建时都同步)
+    if (typeof syncGridSelection === 'function') syncGridSelection(category);
 }
 
 // ========== Marker Selection and Resizing ==========
@@ -2113,8 +2241,10 @@ function startResize(handlePosition, event) {
 
     // Get initial marker size in map coordinates
     const isText = marker.type === 'text';
+    const isShape = marker.type === 'shape';
     let startWidth, startHeight;
-    if (isText) {
+    if (isText || isShape) {
+        // 文字 / 形状标记: 自由 width/height, 跟地图独立缩放
         startWidth = marker.width || (48 * (marker.scale || 1.0));
         startHeight = marker.height || (32 * (marker.scale || 1.0));
     } else {
@@ -2145,7 +2275,8 @@ function startResize(handlePosition, event) {
         rotation,
         theta,
         markerScale: marker.scale || 1.0,
-        isText
+        isText,
+        isShape
     };
 }
 
@@ -2239,7 +2370,8 @@ function handleEditorMouseMove(e) {
             rotation,
             theta,
             markerScale,
-            isText
+            isText,
+            isShape
         } = resizeStartBounds;
 
         // Current mouse position in original local coordinates
@@ -2279,15 +2411,15 @@ function handleEditorMouseMove(e) {
             newLocalCenterY = startHeight / 2 - newHeight / 2;
         }
 
-        if (isText) {
-            // Text marker: free resizing of width and height in map coordinates
+        if (isText || isShape) {
+            // 文字 / 形状标记: 自由 width/height, 跟地图独立缩放
             marker.width = newWidth;
             marker.height = newHeight;
-            
+
             // Calculate new global center on map (rotate projected local center changes back to map coordinates)
             marker.x = startX + newLocalCenterX * Math.cos(theta) - newLocalCenterY * Math.sin(theta);
             marker.y = startY + newLocalCenterX * Math.sin(theta) + newLocalCenterY * Math.cos(theta);
-            
+
             // Sync form coordinate fields if open
             const xField = document.getElementById('markerX');
             const yField = document.getElementById('markerY');
@@ -2338,7 +2470,7 @@ function handleEditorMouseMove(e) {
         // Update display
         updateEditorMarkerScales();
         syncSelectionBoxToSelected();
-        updateScaleIndicator(isText ? 1.0 : marker.scale);
+        updateScaleIndicator((isText || isShape) ? 1.0 : marker.scale);
     }
 }
 
@@ -2571,6 +2703,7 @@ function addIconType() {
 
     iconTypeName.value = '';
     iconTypeColor.value = '#4a90e2';
+    document.getElementById('iconTypeTextColor').value = '#333333';
     document.getElementById('iconTypeBgColor').value = '#f8f9fa';
     document.getElementById('iconTypeTransparent').checked = false;
 
@@ -2623,21 +2756,31 @@ function renderIconShapeSelector(selectedShape) {
 function updateIconPreview(shape, color, imageUrl = null) {
     const preview = document.getElementById('iconTypePreview');
     const bgColor = document.getElementById('iconTypeBgColor').value;
+    const textColorEl = document.getElementById('iconTypeTextColor');
+    const textColor = textColorEl ? textColorEl.value : '#333333';
     const isTransparent = document.getElementById('iconTypeTransparent').checked;
 
     if (preview) {
+        // 预览同时展示图标 + 文字胶囊, 让用户能直观看到图标颜色 + 文字颜色 + 背景
+        let iconInner;
         if (imageUrl) {
-            preview.innerHTML = `<img src="${imageUrl}" style="width: 100%; height: 100%; object-fit: contain;">`;
+            iconInner = `<img src="${imageUrl}" style="width: 24px; height: 24px; object-fit: contain;">`;
         } else if (shape) {
-            preview.innerHTML = `
-                <div style="color: ${color};">
-                    ${SVG_ICONS[shape] || SVG_ICONS.other}
-                </div>
-            `;
+            iconInner = `<div style="color: ${color}; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">${SVG_ICONS[shape] || SVG_ICONS.other}</div>`;
+        } else {
+            iconInner = '';
         }
+        // 跟前台胶囊样式一致: 图标 (色) + 文字 (textColor) + 背景 (bgColor/transparent)
+        const typeName = (document.getElementById('iconTypeName') && document.getElementById('iconTypeName').value) || '预览';
+        const shadowStyle = isTransparent ? '' : 'box-shadow: 0 2px 6px rgba(0,0,0,0.1);';
+        preview.innerHTML = `
+            <div style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px 4px 4px; border-radius: 30px; ${shadowStyle}">
+                ${iconInner}
+                <span style="color: ${textColor}; font-weight: 600; font-size: 13px; padding-left: 4px;">${escapeHtml(typeName)}</span>
+            </div>
+        `;
         preview.style.background = isTransparent ? 'transparent' : bgColor;
-
-        // Add border for visibility if white/transparent
+        // 透明/白色背景加边框
         if (isTransparent || bgColor === '#ffffff' || bgColor.toLowerCase() === '#fff') {
             preview.style.border = '1px solid #ddd';
         } else {
@@ -2662,6 +2805,7 @@ function editIconType(typeId) {
     iconTypeId.value = typeId;
     iconTypeName.value = type.name;
     iconTypeColor.value = type.color;
+    document.getElementById('iconTypeTextColor').value = type.textColor || '#333333';
 
     // Fill background settings
     if (type.bgColor === 'transparent') {
@@ -2699,6 +2843,7 @@ async function saveIconType(e) {
     const typeId = document.getElementById('iconTypeId').value;
     const name = document.getElementById('iconTypeName').value;
     const color = document.getElementById('iconTypeColor').value;
+    const textColor = document.getElementById('iconTypeTextColor').value;
     const bgColor = document.getElementById('iconTypeBgColor').value;
     const isTransparent = document.getElementById('iconTypeTransparent').checked;
     const iconSource = document.querySelector('input[name="iconSource"]:checked').value;
@@ -2706,6 +2851,7 @@ async function saveIconType(e) {
     let typeData = {
         name: name,
         color: color,
+        textColor: textColor,
         bgColor: isTransparent ? 'transparent' : bgColor
     };
 
@@ -2758,18 +2904,83 @@ function closeIconTypeModal() {
 }
 
 // Update icon category select in marker form
+// 同步渲染隐藏的 <select> (兼容 required 验证) + 网格选择器 (所见即所得, 不用先点开下拉)
 function updateIconCategorySelect() {
     const select = document.getElementById('iconCategory');
-    if (!select) return;
+    const grid = document.getElementById('iconCategoryGrid');
+    if (select) {
+        select.innerHTML = '';
+        Object.keys(iconTypes).forEach(typeId => {
+            const type = iconTypes[typeId];
+            const option = document.createElement('option');
+            option.value = typeId;
+            option.textContent = type.name;
+            select.appendChild(option);
+        });
+    }
+    if (grid) {
+        grid.innerHTML = '';
+        // 按 order 字段排序
+        const sorted = Object.keys(iconTypes)
+            .map(id => ({ id, type: iconTypes[id] }))
+            .sort((a, b) => (a.type.order || 999) - (b.type.order || 999));
 
-    select.innerHTML = '';
+        sorted.forEach(({ id, type }) => {
+            const color = type.color || '#9e9e9e';
+            const iconHtml = getMarkerIconSVG(id); // 跟右侧图标类型列表保持视觉一致 (SVG / image)
+            const card = document.createElement('div');
+            card.className = 'icon-category-card';
+            card.dataset.value = id;
+            card.setAttribute('role', 'button');
+            card.setAttribute('tabindex', '0');
+            card.title = type.name;
+            card.innerHTML = `
+                <div class="icon-category-icon" style="background: ${color}1a; color: ${color};">${iconHtml}</div>
+                <div class="icon-category-name">${escapeHtml(type.name)}</div>
+            `;
+            card.addEventListener('click', () => selectIconCategory(id));
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectIconCategory(id);
+                }
+            });
+            grid.appendChild(card);
+        });
+        // 同步当前 select 选中态到 grid
+        if (select) syncGridSelection(select.value);
+    }
+}
 
-    Object.keys(iconTypes).forEach(typeId => {
-        const type = iconTypes[typeId];
-        const option = document.createElement('option');
-        option.value = typeId;
-        option.textContent = type.name;
-        select.appendChild(option);
+// 选中某个图标类型: 同步更新 select + grid 高亮 + 触发 preview 更新
+function selectIconCategory(typeId) {
+    const select = document.getElementById('iconCategory');
+    if (select) select.value = typeId;
+    syncGridSelection(typeId);
+    // 跟旧 select change 行为一致: 触发图标预览
+    if (typeof updateMarkerIconPreview === 'function') updateMarkerIconPreview();
+
+    // 自动填充标签名称: 用 iconTypes 的 name (去掉 emoji, 让用户直接修改)
+    // 行为: 当前输入框为空, 或 跟之前 type 的默认名一致 (避免改 type 时清空用户已输入的自定义名)
+    const labelEl = document.getElementById('iconLabel');
+    if (labelEl && iconTypes[typeId]) {
+        const typeName = (iconTypes[typeId].name || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+        const prev = labelEl.value.trim();
+        // 只在 (空) 或 (跟之前 type 名字一致) 时覆盖, 避免覆盖用户已输入的自定义名
+        const prevType = select ? select.dataset.prevType : null;
+        const prevTypeName = prevType && iconTypes[prevType] ? (iconTypes[prevType].name || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim() : '';
+        if (!prev || prev === prevTypeName) {
+            labelEl.value = typeName;
+        }
+        if (select) select.dataset.prevType = typeId;
+    }
+}
+
+function syncGridSelection(typeId) {
+    const grid = document.getElementById('iconCategoryGrid');
+    if (!grid) return;
+    grid.querySelectorAll('.icon-category-card').forEach(card => {
+        card.classList.toggle('selected', card.dataset.value === typeId);
     });
 }
 
@@ -2825,6 +3036,11 @@ function setupIconTypeListeners() {
 
     if (iconTypeColor) {
         iconTypeColor.addEventListener('input', (e) => updateCurrentIconPreview());
+    }
+
+    const iconTypeTextColor = document.getElementById('iconTypeTextColor');
+    if (iconTypeTextColor) {
+        iconTypeTextColor.addEventListener('input', updateCurrentIconPreview);
     }
 
     const iconTypeBgColor = document.getElementById('iconTypeBgColor');
@@ -3255,24 +3471,13 @@ function renderSidebarConfig() {
     setupDragAndDrop();
 }
 
-// Helper function to get icon SVG (simplified version)
+// Helper function to get icon SVG for sidebar config
+// 直接用 SVG_ICONS 里的真实 SVG, 跟前台/侧边栏显示保持一致
+// 用 inline `<svg style="width:100%;height:100%">` 让 24×24 容器内显示
 function getIconSvg(iconName) {
-    const icons = {
-        printer: '🖨️',
-        shredder: '📄',
-        tv: '📺',
-        screen: '🖥️',
-        server: '🗄️',
-        console: '⌨️',
-        icemaker: '🧊',
-        water: '💧',
-        coffee: '☕',
-        snacks: '🍿',
-        person: '👤',
-        meeting: '🏢',
-        other: '📌'
-    };
-    return icons[iconName] || '📌';
+    const svg = SVG_ICONS[iconName] || SVG_ICONS.other;
+    // SVG_ICONS 内部已经是 `<svg viewBox="0 0 24 24" ...>`, 强制设 100% 大小
+    return svg.replace('<svg ', '<svg style="width:100%;height:100%" ');
 }
 
 // Toggle sidebar visibility for an icon type

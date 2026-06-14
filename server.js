@@ -375,7 +375,7 @@ const validateMarker = [
   body('x').isNumeric().withMessage('X coordinate must be a number'),
   body('y').isNumeric().withMessage('Y coordinate must be a number'),
   body('label').optional().isString().trim().isLength({ max: 100 }),
-  body('type').optional().isIn(['icon', 'text']),
+  body('type').optional().isIn(['icon', 'text', 'shape']),
   body('category').optional().isString().trim().isLength({ max: 50 }),
   (req, res, next) => {
     const errors = validationResult(req);
@@ -484,7 +484,9 @@ const DEFAULT_ICON_TYPES = {
   snacks: { name: '零食台', icon: 'snacks', color: '#ffa726', showInSidebar: true, order: 10 },
   person: { name: '人员', icon: 'person', color: '#4a90e2', showInSidebar: true, order: 11 },
   meeting: { name: '会议室', icon: 'meeting', color: '#ff6b6b', showInSidebar: true, order: 12 },
-  other: { name: '其他', icon: 'other', color: '#9e9e9e', showInSidebar: true, order: 13 }
+  wifi: { name: '📶 无线 AP', icon: 'wifi', color: '#3f51b5', showInSidebar: true, order: 13 },
+  camera: { name: '📹 摄像头', icon: 'camera', color: '#607d8b', showInSidebar: true, order: 14 },
+  other: { name: '其他', icon: 'other', color: '#9e9e9e', showInSidebar: true, order: 15 }
 };
 
 // Get icon types
