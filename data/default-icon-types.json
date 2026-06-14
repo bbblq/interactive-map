@@ -1,0 +1,108 @@
+{
+  "printer": {
+    "name": "打印机",
+    "color": "#2600ff",
+    "bgColor": "#ffffff",
+    "icon": "printer",
+    "imageUrl": null
+  },
+  "shredder": {
+    "name": "碎纸机",
+    "icon": "shredder",
+    "color": "#ff6b6b",
+    "showInSidebar": true,
+    "order": 2
+  },
+  "tv": {
+    "name": "电视",
+    "icon": "tv",
+    "color": "#4a90e2",
+    "showInSidebar": true,
+    "order": 3
+  },
+  "screen": {
+    "name": "大屏幕",
+    "icon": "screen",
+    "color": "#00bcd4",
+    "showInSidebar": true,
+    "order": 4
+  },
+  "server": {
+    "name": "机房",
+    "icon": "server",
+    "color": "#9c27b0",
+    "showInSidebar": true,
+    "order": 5
+  },
+  "console": {
+    "name": "控制台",
+    "icon": "console",
+    "color": "#ff9800",
+    "showInSidebar": true,
+    "order": 6
+  },
+  "icemaker": {
+    "name": "制冰机",
+    "icon": "icemaker",
+    "color": "#03a9f4",
+    "showInSidebar": true,
+    "order": 7
+  },
+  "water": {
+    "name": "饮水机",
+    "icon": "water",
+    "color": "#00bcd4",
+    "showInSidebar": true,
+    "order": 8
+  },
+  "coffee": {
+    "name": "咖啡机",
+    "icon": "coffee",
+    "color": "#795548",
+    "showInSidebar": true,
+    "order": 9
+  },
+  "snacks": {
+    "name": "零食台",
+    "icon": "snacks",
+    "color": "#ffa726",
+    "showInSidebar": true,
+    "order": 10
+  },
+  "person": {
+    "name": "人员",
+    "icon": "person",
+    "color": "#4a90e2",
+    "showInSidebar": true,
+    "order": 11
+  },
+  "meeting": {
+    "name": "会议室",
+    "icon": "meeting",
+    "color": "#ff6b6b",
+    "showInSidebar": true,
+    "order": 12
+  },
+  "wifi": {
+    "name": "无线 AP",
+    "color": "#ff0000",
+    "textColor": "#ff0000",
+    "bgColor": "#f8f9fa",
+    "icon": "wifi",
+    "imageUrl": null
+  },
+  "camera": {
+    "name": "摄像头",
+    "color": "#607d8b",
+    "bgColor": "#f8f9fa",
+    "icon": "camera",
+    "imageUrl": null
+  },
+  "other": {
+    "name": "位置标记",
+    "color": "#9e9e9e",
+    "bgColor": "#f8f9fa",
+    "icon": "other",
+    "imageUrl": null
+  }
+}

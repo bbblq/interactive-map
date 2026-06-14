@@ -12,6 +12,7 @@ Thumbs.db
 
 # Persistent Data (User data should not be in git)
 data/*.json
+!data/default-*.json
 data/auto-backup-*.json
 
 # Uploads (User uploads should not be in git)

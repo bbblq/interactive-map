@@ -1,0 +1,27 @@
+{
+  "person": {
+    "name": "人员",
+    "icon": "👤",
+    "color": "#4a90e2"
+  },
+  "printer": {
+    "name": "打印机",
+    "icon": "🖨️",
+    "color": "#7b68ee"
+  },
+  "water": {
+    "name": "饮水机",
+    "icon": "💧",
+    "color": "#00bcd4"
+  },
+  "meeting": {
+    "name": "会议室",
+    "icon": "🏢",
+    "color": "#ff6b6b"
+  },
+  "other": {
+    "name": "其他",
+    "icon": "📌",
+    "color": "#ffa726"
+  }
+}
