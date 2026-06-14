@@ -64,15 +64,33 @@ const SVG_ICONS = {
 };
 
 let iconTypes = {};
+let currentView = null; // Global view state for Multi-View feature
 
 // Initialize
 async function init() {
+    await loadViewConfig();
     await loadSettings();
     await loadIconTypes();
     await loadMap();
     await loadMarkers();
     setupEventListeners();
     renderCategories(); // Call after all data is loaded
+}
+
+async function loadViewConfig() {
+    const route = window.location.pathname.replace(/^\/|\/$/g, '');
+    if (route && route !== 'admin') {
+        try {
+            const response = await fetch('/api/view/' + route);
+            if (response.ok) {
+                currentView = await response.json();
+            } else {
+                console.warn('View not found, falling back to default map');
+            }
+        } catch (e) {
+            console.error('Failed to load view config:', e);
+        }
+    }
 }
 
 // Load Settings
@@ -253,7 +271,14 @@ function displaySearchResults(results, query) {
 async function loadMarkers() {
     try {
         const response = await fetch('/api/markers');
-        markers = await response.json();
+        let allMarkers = await response.json();
+        
+        // Filter markers if a custom view is active
+        if (currentView && currentView.categories && currentView.categories.length > 0) {
+            allMarkers = allMarkers.filter(m => currentView.categories.includes(m.category || 'other'));
+        }
+        
+        markers = allMarkers;
         renderMarkers();
         renderCategories(); // Update categories after markers are loaded
     } catch (error) {

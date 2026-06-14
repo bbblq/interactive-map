@@ -66,6 +66,10 @@
                         <span class="menu-icon">💾</span>
                         <span>备份管理</span>
                     </div>
+                    <div class="menu-item" data-tab="views">
+                        <span class="menu-icon">👁️</span>
+                        <span>视图管理</span>
+                    </div>
                 </div>
             </aside>
 
@@ -349,6 +353,20 @@
                                     <li>配置文件支持版本兼容,可在未来版本中使用</li>
                                 </ul>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Views Management Tab -->
+                <div id="viewsTab" class="admin-tab">
+                    <div class="tab-header">
+                        <h2>👁️ 多视图管理</h2>
+                        <p>创建和管理不同的前台展示视图，每个视图可以有独立的访问链接和过滤规则</p>
+                        <button id="add-view-btn" class="btn btn-primary" style="margin-top: 15px;">➕ 新增视图</button>
+                    </div>
+                    <div class="views-section">
+                        <div id="views-list-container" class="views-list">
+                            <!-- Views will be listed here dynamically -->
                         </div>
                     </div>
                 </div>
@@ -808,7 +826,41 @@
         </div>
     </div>
 
-    <script src="admin.js?v=13"></script>
+    <!-- View Form Modal -->
+    <div id="viewFormModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2 id="viewFormTitle">新增视图</h2>
+                <button class="close-btn" id="closeViewForm">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="viewForm">
+                    <input type="hidden" id="viewId">
+                    <div class="form-group">
+                        <label for="viewName">视图名称 *</label>
+                        <input type="text" id="viewName" required placeholder="例如：监控大屏">
+                    </div>
+                    <div class="form-group">
+                        <label for="viewRoute">访问路由 *</label>
+                        <input type="text" id="viewRoute" required placeholder="例如：cctv (只能包含字母和数字)">
+                        <small class="hint">访问链接将是：域名/cctv</small>
+                    </div>
+                    <div class="form-group">
+                        <label>允许显示的分类 *</label>
+                        <div id="viewCategoriesContainer" class="icon-category-grid" style="max-height: 250px; overflow-y: auto; padding: 5px;">
+                            <!-- Checkboxes will be populated here -->
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('viewFormModal').style.display='none'">取消</button>
+                        <button type="submit" class="btn btn-primary">保存视图</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js?v=16"></script>
 </body>
 
 </html>

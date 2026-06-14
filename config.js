@@ -22,6 +22,7 @@ module.exports = {
   CATEGORIES_DATA_FILE: path.join(__dirname, 'data', 'categories.json'),
   ICON_TYPES_FILE: path.join(__dirname, 'data', 'icon-types.json'),
   SETTINGS_FILE: path.join(__dirname, 'data', 'settings.json'),
+  VIEWS_FILE: path.join(__dirname, 'data', 'views.json'),
 
   // Cache Configuration
   CACHE_TTL: 5000, // 5 seconds

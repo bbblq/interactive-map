@@ -153,6 +153,10 @@ async function initialize() {
     }
   }
 
+  if (!fsSync.existsSync(config.VIEWS_FILE)) {
+    await writeJSON(config.VIEWS_FILE, []);
+  }
+
   if (isFirstSetup) {
     console.log('✅ First-time setup completed with example office map and markers');
   }
@@ -516,6 +520,82 @@ app.put('/api/icon-types/:id', requireAuth, async (req, res) => {
 });
 
 // ============================================
+// Views APIs
+// ============================================
+
+// Get all views (admin)
+app.get('/api/views', requireAuth, async (req, res) => {
+  try {
+    const views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    res.json(views);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load views' });
+  }
+});
+
+// Get a specific view by route (public)
+app.get('/api/view/:route', async (req, res) => {
+  try {
+    const views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    const view = views.find(v => v.route === req.params.route);
+    if (view) {
+      res.json(view);
+    } else {
+      res.status(404).json({ error: 'View not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load view' });
+  }
+});
+
+// Create view (admin)
+app.post('/api/views', requireAuth, async (req, res) => {
+  try {
+    const views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    // Check for duplicate route
+    if (views.some(v => v.route === req.body.route)) {
+      return res.status(400).json({ error: 'Route already exists' });
+    }
+    const newView = { id: Date.now().toString(), ...req.body };
+    views.push(newView);
+    await writeJSON(config.VIEWS_FILE, views, 'views');
+    res.json(newView);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create view' });
+  }
+});
+
+// Update view (admin)
+app.put('/api/views/:id', requireAuth, async (req, res) => {
+  try {
+    const views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    const index = views.findIndex(v => v.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'View not found' });
+    // Check for duplicate route (ignoring self)
+    if (views.some(v => v.route === req.body.route && v.id !== req.params.id)) {
+      return res.status(400).json({ error: 'Route already exists' });
+    }
+    views[index] = { ...views[index], ...req.body, id: req.params.id };
+    await writeJSON(config.VIEWS_FILE, views, 'views');
+    res.json(views[index]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update view' });
+  }
+});
+
+// Delete view (admin)
+app.delete('/api/views/:id', requireAuth, async (req, res) => {
+  try {
+    let views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    views = views.filter(v => v.id !== req.params.id);
+    await writeJSON(config.VIEWS_FILE, views, 'views');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete view' });
+  }
+});
+
+// ============================================
 // Settings APIs
 // ============================================
 
@@ -660,12 +740,12 @@ app.use((err, req, res, next) => {
 // ============================================
 // Frontend Routes
 // ============================================
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/:viewRoute?', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start server with initialization
