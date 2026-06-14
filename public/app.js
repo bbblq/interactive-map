@@ -543,10 +543,10 @@ function renderCategories() {
             <div class="category-left" onclick="toggleCategoryExpand('${key}')">
               <span class="category-expand-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
               <span class="category-icon-wrapper">
-                <span class="category-icon" style="display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="toggleCategoryExpand('${key}')">${iconHtml}</span>
+                <span class="category-icon" style="display: flex; align-items: center; justify-content: center; cursor: pointer;">${iconHtml}</span>
                 <span class="category-badge">${count}</span>
               </span>
-              <span class="category-name" style="cursor: pointer;" onclick="toggleCategoryExpand('${key}')">${cat.name}</span>
+              <span class="category-name" style="cursor: pointer;">${cat.name}</span>
               <span class="category-count-text">${count}</span>
             </div>
             <button class="category-visibility-btn" onclick="event.stopPropagation(); toggleCategoryVisibility('${key}')" title="${isHidden ? '显示分类' : '隐藏分类'}">
