@@ -534,10 +534,16 @@ app.get('/api/views', requireAuth, async (req, res) => {
 });
 
 // Get a specific view by route (public)
+// Special route '__main__' returns the view marked as isMain
 app.get('/api/view/:route', async (req, res) => {
   try {
     const views = await readJSON(config.VIEWS_FILE, 'views') || [];
-    const view = views.find(v => v.route === req.params.route);
+    let view;
+    if (req.params.route === '__main__') {
+      view = views.find(v => v.isMain === true);
+    } else {
+      view = views.find(v => v.route === req.params.route);
+    }
     if (view) {
       res.json(view);
     } else {
@@ -583,6 +589,18 @@ app.put('/api/views/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Clear main view (admin) — must be before /:id route
+app.delete('/api/views/clear-main', requireAuth, async (req, res) => {
+  try {
+    const views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    views.forEach(v => delete v.isMain);
+    await writeJSON(config.VIEWS_FILE, views, 'views');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear main view' });
+  }
+});
+
 // Delete view (admin)
 app.delete('/api/views/:id', requireAuth, async (req, res) => {
   try {
@@ -592,6 +610,22 @@ app.delete('/api/views/:id', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete view' });
+  }
+});
+
+// Set a view as main view (admin)
+app.put('/api/views/:id/set-main', requireAuth, async (req, res) => {
+  try {
+    const views = await readJSON(config.VIEWS_FILE, 'views') || [];
+    const index = views.findIndex(v => v.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'View not found' });
+    // Clear isMain from all views, then set on the target
+    views.forEach(v => delete v.isMain);
+    views[index].isMain = true;
+    await writeJSON(config.VIEWS_FILE, views, 'views');
+    res.json(views[index]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to set main view' });
   }
 });
 

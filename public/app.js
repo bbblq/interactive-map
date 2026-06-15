@@ -80,6 +80,7 @@ async function init() {
 async function loadViewConfig() {
     const route = window.location.pathname.replace(/^\/|\/$/g, '');
     if (route && route !== 'admin') {
+        // Custom view path (e.g. /cctv)
         try {
             const response = await fetch('/api/view/' + route);
             if (response.ok) {
@@ -89,6 +90,17 @@ async function loadViewConfig() {
             }
         } catch (e) {
             console.error('Failed to load view config:', e);
+        }
+    } else if (!route) {
+        // Root path — check if a main view is configured
+        try {
+            const response = await fetch('/api/view/__main__');
+            if (response.ok) {
+                currentView = await response.json();
+            }
+            // If 404, currentView stays null — show all markers
+        } catch (e) {
+            // Network error — show all markers
         }
     }
 }
@@ -579,7 +591,11 @@ function renderCategories() {
             </button>
           </div>
           <div class="category-items ${isExpanded ? 'expanded' : ''}" id="category-${key}">
-            ${markers.filter(m => (m.category || 'other') === key).map(m => {
+            ${markers.filter(m => (m.category || 'other') === key).sort((a, b) => {
+                const nameA = (a.label || a.content || '').toLowerCase();
+                const nameB = (b.label || b.content || '').toLowerCase();
+                return nameB.localeCompare(nameA, 'zh-CN', { numeric: true });
+            }).map(m => {
                 let displayName = m.label;
                 if (m.type === 'text') {
                     displayName = m.content || m.label || '(未命名文字)';
