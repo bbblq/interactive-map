@@ -626,7 +626,7 @@ body {
 }
 
 .sidebar.expanded .category-items.expanded {
-  max-height: 1000px;
+  max-height: 3000px;
 }
 
 .category-item {
