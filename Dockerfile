@@ -14,6 +14,7 @@ RUN npm install --production
 COPY server.js ./
 COPY config.js ./
 COPY backup-utils.js ./
+COPY views-management.js ./
 COPY public ./public
 COPY data ./data
 
