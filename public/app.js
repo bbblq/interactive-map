@@ -594,7 +594,7 @@ function renderCategories() {
             ${markers.filter(m => (m.category || 'other') === key).sort((a, b) => {
                 const nameA = (a.label || a.content || '').toLowerCase();
                 const nameB = (b.label || b.content || '').toLowerCase();
-                return nameB.localeCompare(nameA, 'zh-CN', { numeric: true });
+                return nameA.localeCompare(nameB, 'zh-CN', { numeric: true });
             }).map(m => {
                 let displayName = m.label;
                 if (m.type === 'text') {
