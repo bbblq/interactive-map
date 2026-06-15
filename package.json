@@ -1,6 +1,6 @@
 {
   "name": "interactive-map",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "description": "Interactive office map with admin panel",
   "main": "server.js",
   "scripts": {

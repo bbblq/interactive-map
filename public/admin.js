@@ -3659,24 +3659,62 @@ function renderViewsList() {
             return type ? type.name : c;
         }).join(', ');
 
+        const isMain = view.isMain === true;
+        const mainBadge = isMain
+            ? '<span style="display: inline-block; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-size: 12px; padding: 2px 8px; border-radius: 10px; margin-left: 8px; font-weight: 600;">★ 主视图</span>'
+            : '';
+        const mainBtn = isMain
+            ? `<button class="btn btn-secondary btn-sm" onclick="clearMainView()" style="color: #d97706; border-color: #d97706;" title="取消主视图">☆ 取消主视图</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="setMainView('${view.id}')" title="设为主视图，根路径将使用此视图">★ 设为主视图</button>`;
+
         return `
-            <div class="view-item" style="border: 1px solid var(--border-color); border-radius: 6px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; background: white;">
+            <div class="view-item" style="border: 1px solid ${isMain ? '#f59e0b' : 'var(--border-color)'}; border-radius: 6px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; background: ${isMain ? '#fffbeb' : 'white'};">
                 <div>
-                    <h3 style="margin: 0 0 5px 0;">${escapeHtml(view.name)}</h3>
+                    <h3 style="margin: 0 0 5px 0;">${escapeHtml(view.name)}${mainBadge}</h3>
                     <p style="margin: 0 0 5px 0; color: var(--text-secondary); font-size: 13px;">
-                        <strong>路由:</strong> <a href="/${escapeHtml(view.route)}" target="_blank">/${escapeHtml(view.route)}</a>
+                        <strong>路由:</strong> <a href="/${escapeHtml(view.route)}" target="_blank">/${escapeHtml(view.route)}</a>${isMain ? ' <span style="color: #d97706; font-size: 12px;">(同时作为根路径 / 的默认视图)</span>' : ''}
                     </p>
                     <p style="margin: 0; color: var(--text-secondary); font-size: 13px;">
                         <strong>显示分类:</strong> ${escapeHtml(cats) || '无'}
                     </p>
                 </div>
-                <div>
+                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                    ${mainBtn}
                     <button class="btn btn-secondary btn-sm" onclick="editView('${view.id}')">✏️ 编辑</button>
                     <button class="btn btn-danger btn-sm" onclick="deleteView('${view.id}')">🗑️ 删除</button>
                 </div>
             </div>
         `;
     }).join('');
+}
+
+async function setMainView(id) {
+    try {
+        const response = await fetch('/api/views/' + id + '/set-main', { method: 'PUT' });
+        if (response.ok) {
+            showToast('已设为主视图', 'success');
+            loadViews();
+        } else {
+            const error = await response.json();
+            showToast(error.error || '设置失败', 'error');
+        }
+    } catch (error) {
+        showToast('设置失败', 'error');
+    }
+}
+
+async function clearMainView() {
+    try {
+        const response = await fetch('/api/views/clear-main', { method: 'DELETE' });
+        if (response.ok) {
+            showToast('已取消主视图，根路径将显示所有标记', 'success');
+            loadViews();
+        } else {
+            showToast('操作失败', 'error');
+        }
+    } catch (error) {
+        showToast('操作失败', 'error');
+    }
 }
 
 function openViewForm(viewId = null) {
@@ -3790,6 +3828,8 @@ async function deleteView(id) {
 
 window.editView = openViewForm;
 window.deleteView = deleteView;
+window.setMainView = setMainView;
+window.clearMainView = clearMainView;
 
 document.addEventListener('DOMContentLoaded', () => {
     const addViewBtn = document.getElementById('add-view-btn');
