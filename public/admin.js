@@ -842,11 +842,11 @@ function syncSelectionBoxToSelected() {
     const marker = markers.find(m => m.id === selectedMarkerId);
     const rotation = (marker && marker.rotation) || 0;
 
-    selectionBox.style.left = left + 'px';
-    selectionBox.style.top = top + 'px';
+    selectionBox.style.left = centerX + 'px';
+    selectionBox.style.top = centerY + 'px';
     selectionBox.style.width = width + 'px';
     selectionBox.style.height = height + 'px';
-    selectionBox.style.transform = `rotate(${rotation}deg)`;
+    selectionBox.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
     selectionBox.style.transformOrigin = 'center center';
 
     // 调整手柄尺寸也按新尺寸重�?
@@ -890,11 +890,11 @@ function updateEditorMarkerScales() {
         markerEl.style.top = screenY + 'px';
 
         if (isText || isShape) {
-            // 文字 / 形状标记: 自由尺寸, 边长跟随地图缩放
+            // 文字 / 形状标记: 自由尺寸, 不再在此处乘以缩放系数，改用 transform scale 缩放
             const baseW = marker.width || (48 * markerScale);
             const baseH = marker.height || (32 * markerScale);
-            const w = baseW * editorScale * sizeMul;
-            const h = baseH * editorScale * sizeMul;
+            const w = baseW * sizeMul;
+            const h = baseH * sizeMul;
 
             markerEl.style.width = w + 'px';
             markerEl.style.height = h + 'px';
@@ -902,14 +902,15 @@ function updateEditorMarkerScales() {
             if (isText) {
                 const label = markerEl.querySelector('.text-label');
                 if (label) {
-                    const fontPx = (marker.fontSize || 14) * editorScale * sizeMul;
+                    const fontPx = (marker.fontSize || 14) * sizeMul;
                     label.style.fontSize = fontPx + 'px';
                 }
             }
-            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+            markerEl.style.transformOrigin = 'center center';
+            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
         } else {
-            // 图标标记: 保持等比缩放
-            const targetSize = EDITOR_MARKER_BASE * markerScale * sizeMul * editorScale;
+            // 图标标记: 使用 100% 尺寸，通过 transform scale 整体进行等比缩放
+            const targetSize = EDITOR_MARKER_BASE * markerScale * sizeMul;
             
             const iconPart = markerEl.querySelector('.marker-icon-part');
             if (iconPart) {
@@ -921,15 +922,16 @@ function updateEditorMarkerScales() {
                 const fontPx = EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE);
                 labelPart.style.fontSize = fontPx + 'px';
                 const hasIcon = !!iconPart;
-                labelPart.style.paddingLeft = ((hasIcon ? 4 : 8) * editorScale * sizeMul) + 'px';
-                labelPart.style.paddingRight = (10 * editorScale * sizeMul) + 'px';
+                labelPart.style.paddingLeft = (hasIcon ? 4 : 8) + 'px';
+                labelPart.style.paddingRight = '10px';
             }
             const capsule = markerEl.querySelector('.marker-capsule');
             if (capsule) {
-                capsule.style.padding = (4 * editorScale * sizeMul) + 'px';
-                capsule.style.borderRadius = (30 * editorScale * sizeMul) + 'px';
+                capsule.style.padding = '4px';
+                capsule.style.borderRadius = '30px';
             }
-            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg)`;
+            markerEl.style.transformOrigin = '50% 100%';
+            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg) scale(${editorScale})`;
         }
     }
 }
@@ -2080,11 +2082,11 @@ function createSelectionBox(marker, markerEl) {
     // rotation 默认 0, 选择框第一次创建时没旋�? 调整过一次后才修�?
     const rotation = (marker && marker.rotation) || 0;
 
-    selectionBox.style.left = left + 'px';
-    selectionBox.style.top = top + 'px';
+    selectionBox.style.left = centerX + 'px';
+    selectionBox.style.top = centerY + 'px';
     selectionBox.style.width = width + 'px';
     selectionBox.style.height = height + 'px';
-    selectionBox.style.transform = `rotate(${rotation}deg)`;
+    selectionBox.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
     selectionBox.style.transformOrigin = 'center center';
 
     // 创建8个调整手柄（四角+四边�?
@@ -2352,10 +2354,8 @@ function handleEditorMouseMove(e) {
                 const markerRect = markerEl.getBoundingClientRect();
                 const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
                 const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
-                const boxW = markerEl.offsetWidth;
-                const boxH = markerEl.offsetHeight;
-                selectionBox.style.left = (centerX - boxW / 2) + 'px';
-                selectionBox.style.top = (centerY - boxH / 2) + 'px';
+                selectionBox.style.left = centerX + 'px';
+                selectionBox.style.top = centerY + 'px';
             }
         }
     } else if (isResizing && selectedMarkerId && resizeStartBounds) {

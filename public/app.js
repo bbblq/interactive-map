@@ -373,25 +373,25 @@ function updateMarkerTransforms() {
         markerEl.style.top = screenY + 'px';
 
         if (isText) {
-            // 文字标记: 跟地图等比缩放, 直接乘 scale (前台/后台/导出三方一致)
+            // 文字标记: 使用 100% 尺寸，通过 transform scale 整体进行等比缩放
             const baseW = marker.width || (48 * markerScale);
             const baseH = marker.height || (32 * markerScale);
-            const w = baseW * scale * sizeMul;
-            const h = baseH * scale * sizeMul;
+            const w = baseW * sizeMul;
+            const h = baseH * sizeMul;
 
             markerEl.style.width = w + 'px';
             markerEl.style.height = h + 'px';
 
             const label = markerEl.querySelector('.text-label');
             if (label) {
-                const baseFontPx = (marker.fontSize || 14) * scale * sizeMul;
+                const baseFontPx = (marker.fontSize || 14) * sizeMul;
                 label.style.fontSize = baseFontPx + 'px';
             }
-            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+            markerEl.style.transformOrigin = 'center center';
+            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`;
         } else {
-            // 图标标记: 跟地图等比缩放 (前台/后台/导出三方一致)
-            const baseSize = MARKER_BASE_SIZE * markerScale * sizeMul * scale;
-            const targetSize = baseSize;
+            // 图标标记: 使用 100% 尺寸，通过 transform scale 整体进行等比缩放
+            const targetSize = MARKER_BASE_SIZE * markerScale * sizeMul;
 
             const iconPart = markerEl.querySelector('.marker-icon-part');
             if (iconPart) {
@@ -402,15 +402,16 @@ function updateMarkerTransforms() {
             if (labelPart) {
                 const fontPx = MARKER_FONT_BASE * (targetSize / MARKER_BASE_SIZE);
                 labelPart.style.fontSize = fontPx + 'px';
-                labelPart.style.paddingLeft = (4 * scale * sizeMul) + 'px';
-                labelPart.style.paddingRight = (10 * scale * sizeMul) + 'px';
+                labelPart.style.paddingLeft = '4px';
+                labelPart.style.paddingRight = '10px';
             }
             const capsule = markerEl.querySelector('.marker-capsule');
             if (capsule) {
-                capsule.style.padding = (4 * scale * sizeMul) + 'px';
-                capsule.style.borderRadius = (30 * scale * sizeMul) + 'px';
+                capsule.style.padding = '4px';
+                capsule.style.borderRadius = '30px';
             }
-            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg)`;
+            markerEl.style.transformOrigin = '50% 100%';
+            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg) scale(${scale})`;
         }
     }
 }
@@ -1325,7 +1326,7 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
         const sin = Math.sin(rad);
         const cx = mx;
         const cy = my - capsuleH / 2;
-        const m = new doc.Matrix(cos, sin, -sin, cos, cx - cx * cos + cy * sin, cy - cx * sin - cy * cos);
+        const m = doc.Matrix(cos, sin, -sin, cos, cx - cx * cos + cy * sin, cy - cx * sin - cy * cos);
         doc.setCurrentTransformationMatrix(m);
     }
 
@@ -1383,7 +1384,7 @@ async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
         const rad = rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        const m = new doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
+        const m = doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
         doc.setCurrentTransformationMatrix(m);
     }
 
@@ -1429,7 +1430,7 @@ async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul) {
         const rad = rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        const m = new doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
+        const m = doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
         doc.setCurrentTransformationMatrix(m);
     }
 
