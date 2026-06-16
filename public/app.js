@@ -1306,6 +1306,18 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
     const capsuleX = mx - capsuleW / 2;
     const capsuleY = my - capsuleH;
 
+    const rotation = marker.rotation || 0;
+    if (rotation !== 0) {
+        doc.saveGraphicsState();
+        const rad = rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const cx = mx;
+        const cy = my - capsuleH / 2;
+        const m = new doc.Matrix(cos, sin, -sin, cos, cx - cx * cos + cy * sin, cy - cx * sin - cy * cos);
+        doc.setCurrentTransformationMatrix(m);
+    }
+
     if (!isTransparent) {
         applyPdfColor(doc, bgColor, 'fill');
         doc.roundedRect(capsuleX, capsuleY, capsuleW, capsuleH, borderRadius, borderRadius, 'F');
@@ -1340,6 +1352,10 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
         doc.text(labelText, textX, textY, { baseline: 'middle' });
         doc.setGState(new doc.GState({opacity: 1}));
     }
+
+    if (rotation !== 0) {
+        doc.restoreGraphicsState();
+    }
 }
 
 async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
@@ -1349,6 +1365,16 @@ async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
     const fontSize = Math.max(6, (marker.fontSize || 14) * sizeMul);
     const rectX = mx - baseW / 2;
     const rectY = my - baseH / 2;
+
+    const rotation = marker.rotation || 0;
+    if (rotation !== 0) {
+        doc.saveGraphicsState();
+        const rad = rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const m = new doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
+        doc.setCurrentTransformationMatrix(m);
+    }
 
     const bgColor = marker.bgColor || '';
     if (bgColor && bgColor !== 'transparent') {
@@ -1373,6 +1399,10 @@ async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
         doc.text(content, mx, my, { align: 'center', baseline: 'middle' });
         doc.setGState(new doc.GState({opacity: 1}));
     }
+
+    if (rotation !== 0) {
+        doc.restoreGraphicsState();
+    }
 }
 
 async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul) {
@@ -1381,8 +1411,23 @@ async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul) {
     const baseH = (marker.height || (32 * markerScale)) * sizeMul;
     const shapeX = mx - baseW / 2;
     const shapeY = my - baseH / 2;
+
+    const rotation = marker.rotation || 0;
+    if (rotation !== 0) {
+        doc.saveGraphicsState();
+        const rad = rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const m = new doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
+        doc.setCurrentTransformationMatrix(m);
+    }
+
     const svgString = buildShapeSvg(marker);
     if (svgString) await drawSvgToPdf(doc, svgString, shapeX, shapeY, baseW, baseH, null);
+
+    if (rotation !== 0) {
+        doc.restoreGraphicsState();
+    }
 }
 
 async function exportAsPdf(range) {
