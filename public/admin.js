@@ -902,7 +902,7 @@ function updateEditorMarkerScales() {
             if (isText) {
                 const label = markerEl.querySelector('.text-label');
                 if (label) {
-                    const fontPx = Math.max(4, (marker.fontSize || 14) * editorScale * sizeMul);
+                    const fontPx = (marker.fontSize || 14) * editorScale * sizeMul;
                     label.style.fontSize = fontPx + 'px';
                 }
             }
@@ -918,8 +918,16 @@ function updateEditorMarkerScales() {
             }
             const labelPart = markerEl.querySelector('.marker-label-part');
             if (labelPart) {
-                const fontPx = Math.max(10, EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE));
+                const fontPx = EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE);
                 labelPart.style.fontSize = fontPx + 'px';
+                const hasIcon = !!iconPart;
+                labelPart.style.paddingLeft = ((hasIcon ? 4 : 8) * editorScale * sizeMul) + 'px';
+                labelPart.style.paddingRight = (10 * editorScale * sizeMul) + 'px';
+            }
+            const capsule = markerEl.querySelector('.marker-capsule');
+            if (capsule) {
+                capsule.style.padding = (4 * editorScale * sizeMul) + 'px';
+                capsule.style.borderRadius = (30 * editorScale * sizeMul) + 'px';
             }
             markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg)`;
         }

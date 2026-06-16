@@ -400,8 +400,15 @@ function updateMarkerTransforms() {
             }
             const labelPart = markerEl.querySelector('.marker-label-part');
             if (labelPart) {
-                const fontPx = Math.max(10, MARKER_FONT_BASE * (targetSize / MARKER_BASE_SIZE));
+                const fontPx = MARKER_FONT_BASE * (targetSize / MARKER_BASE_SIZE);
                 labelPart.style.fontSize = fontPx + 'px';
+                labelPart.style.paddingLeft = (4 * scale * sizeMul) + 'px';
+                labelPart.style.paddingRight = (10 * scale * sizeMul) + 'px';
+            }
+            const capsule = markerEl.querySelector('.marker-capsule');
+            if (capsule) {
+                capsule.style.padding = (4 * scale * sizeMul) + 'px';
+                capsule.style.borderRadius = (30 * scale * sizeMul) + 'px';
             }
             markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg)`;
         }
@@ -1104,6 +1111,7 @@ async function renderExportCanvas(range) {
     // "完整地图" 模式: 临时把整个源图缩放到 viewport 大小, 拍完恢复
     // 否则拍出来的只是当前视野 (跟 viewport 模式一样)
     let savedState = null;
+    let exportScale = 2;
     if (range === 'full') {
         const srcW = mapImg.naturalWidth;
         const srcH = mapImg.naturalHeight;
@@ -1124,14 +1132,15 @@ async function renderExportCanvas(range) {
         scheduleTransform();
         // 等 transform 跟 markers 都更新完 (两个 raf: 一个 scheduleTransform 的, 一个浏览器 layout)
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        exportScale = Math.max(2, 1 / tmpScale);
     }
 
     let canvas;
     try {
         canvas = await html2canvas(mapWrapper, {
             backgroundColor: '#ffffff',
-            // scale: 2 让导出位图更清晰 (前台 1 屏幕像素 = 导出 2 像素)
-            scale: 2,
+            // scale: 让导出位图更清晰 (满图时还原到真实分辨率，可见区域为2倍)
+            scale: exportScale,
             // 不要截到 markersContainer 之外的东西 (如搜索栏 overlay), 但 mapWrapper 本身已经只装地图
             logging: false,
             useCORS: true,
