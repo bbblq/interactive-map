@@ -1292,7 +1292,7 @@ async function drawSvgToPdf(doc, svgString, x, y, width, height, color) {
     try { await doc.svg(svgEl, { x, y, width, height }); } catch (e) { console.warn('PDF: SVG 渲染失败', e); }
 }
 
-async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
+async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     const markerScale = marker.scale || 1.0;
     const type = iconTypes[marker.category] || iconTypes.other || {};
     const baseUnit = markerScale * sizeMul;
@@ -1326,7 +1326,8 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
         const sin = Math.sin(rad);
         const cx = mx;
         const cy = my - capsuleH / 2;
-        const m = doc.Matrix(cos, sin, -sin, cos, cx - cx * cos + cy * sin, cy - cx * sin - cy * cos);
+        const cy_pdf = pdfH - cy;
+        const m = doc.Matrix(cos, -sin, sin, cos, cx - cx * cos - cy_pdf * sin, cy_pdf + cx * sin - cy_pdf * cos);
         doc.setCurrentTransformationMatrix(m);
     }
 
@@ -1370,7 +1371,7 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul) {
     }
 }
 
-async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
+async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     const markerScale = marker.scale || 1.0;
     const baseW = (marker.width || (48 * markerScale)) * sizeMul;
     const baseH = (marker.height || (32 * markerScale)) * sizeMul;
@@ -1384,7 +1385,8 @@ async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
         const rad = rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        const m = doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
+        const cy_pdf = pdfH - my;
+        const m = doc.Matrix(cos, -sin, sin, cos, mx - mx * cos - cy_pdf * sin, cy_pdf + mx * sin - cy_pdf * cos);
         doc.setCurrentTransformationMatrix(m);
     }
 
@@ -1417,7 +1419,7 @@ async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul) {
     }
 }
 
-async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul) {
+async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     const markerScale = marker.scale || 1.0;
     const baseW = (marker.width || (48 * markerScale)) * sizeMul;
     const baseH = (marker.height || (32 * markerScale)) * sizeMul;
@@ -1430,7 +1432,8 @@ async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul) {
         const rad = rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        const m = doc.Matrix(cos, sin, -sin, cos, mx - mx * cos + my * sin, my - mx * sin - my * cos);
+        const cy_pdf = pdfH - my;
+        const m = doc.Matrix(cos, -sin, sin, cos, mx - mx * cos - cy_pdf * sin, cy_pdf + mx * sin - cy_pdf * cos);
         doc.setCurrentTransformationMatrix(m);
     }
 
@@ -1495,9 +1498,9 @@ async function exportAsPdf(range) {
         const my = marker.y - offsetY;
         if (mx < -300 || mx > pdfW + 300 || my < -300 || my > pdfH + 300) continue;
         try {
-            if (marker.type === 'text') await drawTextMarkerPdf(doc, marker, mx, my, sizeMul);
-            else if (marker.type === 'shape') await drawShapeMarkerPdf(doc, marker, mx, my, sizeMul);
-            else await drawIconMarkerPdf(doc, marker, mx, my, sizeMul);
+            if (marker.type === 'text') await drawTextMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
+            else if (marker.type === 'shape') await drawShapeMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
+            else await drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
             drawn++;
             if (drawn % 10 === 0) {
                 setExportStatus(`正在绘制标记 (${drawn}/${total})...`);
