@@ -116,9 +116,13 @@
                             <div class="markers-list-toolbar">
                                 <h3>标记列表</h3>
                                 <div class="markers-list-actions">
+                                    <button class="ml-action-btn" id="undoBtn" onclick="undoLastChange()" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
+                                    <button class="ml-action-btn" id="redoBtn" onclick="redoLastChange()" title="重做 (Ctrl+Shift+Z)" disabled>↷ 重做</button>
                                     <button class="ml-action-btn" onclick="showAllAdminCategories()" title="全部显示">👁 显示</button>
                                     <button class="ml-action-btn" onclick="hideAllAdminCategories()" title="全部隐藏">🚫 隐藏</button>
                                 </div>
+                            <div class="markers-list-hint" id="historyHint" style="font-size:11px;color:var(--text-secondary);margin:6px 0 8px;line-height:1.4;">提示：Ctrl+Z 撤销 · Ctrl+Shift+Z 重做 · 最多保留 50 步历史</div>
+                            </div>
                             </div>
                             <div class="markers-list-search">
                                 <input type="text" placeholder="搜索标记..." oninput="handleAdminMarkerSearch(event)">

@@ -1658,10 +1658,27 @@
     white-space: nowrap;
 }
 
-.ml-action-btn:hover {
+.ml-action-btn:hover:not(:disabled) {
     background: var(--primary-color, #4a90e2);
     color: #fff;
     border-color: var(--primary-color, #4a90e2);
+}
+
+.ml-action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    color: var(--text-secondary, #6b7280);
+}
+
+.markers-list-hint {
+    user-select: none;
+    opacity: 0.85;
+}
+
+#undoBtn:not(:disabled), #redoBtn:not(:disabled) {
+    color: var(--primary-color, #4a90e2);
+    border-color: var(--primary-color, #4a90e2);
+    font-weight: 600;
 }
 
 /* Search input */

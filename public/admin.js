@@ -79,11 +79,18 @@ let isRotating = false;
 let rotateStartAngle = 0;
 let markerStartRotation = 0;
 let isDraggingMarker = false;
+let pendingDrag = false;  // [优化] mousedown 后等待阈值, 超过后才真正进入 drag
 let dragStartX = 0;
 let dragStartY = 0;
 let markerStartX = 0;
 let markerStartY = 0;
 let markerStartScale = 1.0;
+
+// [优化] 拖拽阈值: 鼠标移动超过这个像素才认为是 drag, 否则仅仅是点选
+//   zoom 后标记很大, 这个阈值可以避免误碰就跳
+const DRAG_THRESHOLD = 4;
+// [优化] 拖动/缩放/旋转期间禁止滚轮缩放, 避免误操作
+let inputLockZoom = false;
 
 // Icon Types Management
 let iconTypes = {};
@@ -97,6 +104,115 @@ let adminMarkerSearchQuery = '';
 // Copy-Paste State Management
 let copiedMarkerData = null;
 let hasCopiedData = false;
+
+// ============================================================
+//   Undo / Redo history (Ctrl+Z / Ctrl+Shift+Z)
+// ============================================================
+// 快照式历史栈 - 在每次会改变 markers 数组的操作前调用 pushHistory(label).
+//   拖拽/缩放/旋转: 在 mousedown 捕获快照, 避免每次 mousemove 都入栈.
+//   undo/redo 通过对比新旧 markers, 计算 diff, 增量同步给服务器.
+const HISTORY_MAX = 50;
+const undoStack = [];   // 元素: { markers: deepCopy, label }
+const redoStack = [];
+let historySuspended = false;  // applyHistoryState 期间禁止 push (避免回环)
+
+function snapshotMarkers() {
+    return JSON.parse(JSON.stringify(markers));
+}
+
+function pushHistory(label) {
+    if (historySuspended) return;
+    if (markers == null) return;
+    undoStack.push({ markers: snapshotMarkers(), label: label || 'edit' });
+    if (undoStack.length > HISTORY_MAX) undoStack.shift();
+    redoStack.length = 0;  // 新操作清空 redo 栈
+    refreshHistoryButtons();
+}
+
+async function undoLastChange() {
+    if (undoStack.length === 0) {
+        showToast('没有可撤销的操作', 'info');
+        return;
+    }
+    const currentSnap = { markers: snapshotMarkers() };
+    const prev = undoStack.pop();
+    redoStack.push(currentSnap);
+    if (redoStack.length > HISTORY_MAX) redoStack.shift();
+    await applyHistoryState(prev.markers, prev.label);
+    refreshHistoryButtons();
+}
+
+async function redoLastChange() {
+    if (redoStack.length === 0) {
+        showToast('没有可重做的操作', 'info');
+        return;
+    }
+    const currentSnap = { markers: snapshotMarkers() };
+    const next = redoStack.shift();
+    undoStack.push(currentSnap);
+    if (undoStack.length > HISTORY_MAX) undoStack.shift();
+    await applyHistoryState(next.markers, '重做');
+    refreshHistoryButtons();
+}
+
+function refreshHistoryButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) undoBtn.disabled = (undoStack.length === 0);
+    if (redoBtn) redoBtn.disabled = (redoStack.length === 0);
+}
+
+// 把 newMarkers 同步到服务器 (增量: 只 PUT/POST/DELETE 变化的部分), 然后 reload.
+async function applyHistoryState(newMarkers, label) {
+    const oldById = new Map(markers.map(m => [String(m.id), m]));
+    const newById = new Map(newMarkers.map(m => [String(m.id), m]));
+    historySuspended = true;
+    try {
+        // 1) 删除: new 中不存在的
+        const toDelete = [];
+        for (const oldM of markers) {
+            if (!newById.has(String(oldM.id))) toDelete.push(oldM.id);
+        }
+        for (const id of toDelete) {
+            try { await fetch(`/api/markers/${id}`, { method: 'DELETE' }); } catch (e) {}
+        }
+        // 2) 新建: old 中不存在的
+        for (const newM of newMarkers) {
+            if (!oldById.has(String(newM.id))) {
+                try {
+                    await fetch('/api/markers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newM)
+                    });
+                } catch (e) {}
+            }
+        }
+        // 3) 更新: 内容发生变化的
+        for (const newM of newMarkers) {
+            const oldM = oldById.get(String(newM.id));
+            if (!oldM) continue;
+            if (JSON.stringify(oldM) !== JSON.stringify(newM)) {
+                try {
+                    await fetch(`/api/markers/${newM.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newM)
+                    });
+                } catch (e) {}
+            }
+        }
+    } finally {
+        historySuspended = false;
+    }
+    await loadMarkers();
+    deselectMarker();
+    showToast((label ? label + ': ' : '') + '已应用', 'success');
+}
+
+window.undoLastChange = undoLastChange;
+window.redoLastChange = redoLastChange;
+
 
 // SVG Icons Library
 const SVG_ICONS = {
@@ -528,6 +644,24 @@ function setupKeyboardShortcuts() {
                 deleteMarker(selectedMarkerId);
             }
         }
+
+        // Undo / Redo
+        //   Ctrl+Z            -> undo
+        //   Ctrl+Shift+Z / Ctrl+Y -> redo
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+            if (isInputFocused()) return;  // 输入框里不要劫持
+            if (key === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) redoLastChange();
+                else undoLastChange();
+                return;
+            }
+            if (key === 'y') {
+                e.preventDefault();
+                redoLastChange();
+                return;
+            }
+        }
     });
 }
 
@@ -610,6 +744,8 @@ function setupAdminListeners() {
 
     // Editor wheel zoom
     editorMapWrapper.addEventListener('wheel', (e) => {
+        // [优化] 拖动/缩放/旋转期间禁止滚轮缩放, 避免“拖着拖着就被放大几倍”
+        if (inputLockZoom || isDraggingMarker || isResizing || isRotating || pendingDrag) return;
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.85 : 1.15;
         editorZoom(delta, e.clientX, e.clientY);
@@ -1761,6 +1897,40 @@ function closeMarkerFormModal() {
 }
 
 // Save marker
+// [优化] 增量更新单个标记: 更新数据 + 重绘那个标记的 DOM + 同步侧边栏列表
+//   避免调用 loadMarkers() 重建全部 DOM, 提高保存后的响应速度
+async function upsertMarkerLocal(newMarker) {
+    const idx = markers.findIndex(m => String(m.id) === String(newMarker.id));
+    if (idx >= 0) {
+        markers[idx] = newMarker;
+    } else {
+        markers.push(newMarker);
+    }
+    renderSingleMarker(newMarker);
+    renderMarkersList();
+    // 保持选中状态
+    const markerEl = document.querySelector(`.marker[data-id="${newMarker.id}"]`);
+    if (markerEl) {
+        markerEl.classList.add('selected');
+        if (typeof createSelectionBox === 'function') {
+            createSelectionBox(newMarker, markerEl);
+        }
+    }
+}
+
+// [优化] 重绘单个标记元素
+function renderSingleMarker(marker) {
+    const container = editorMarkersContainer;
+    const existing = container.querySelector(`.marker[data-id="${marker.id}"]`);
+    if (existing) {
+        applyMarkerTransform(marker, existing);
+        existing.style.zIndex = parseInt(marker.zIndex, 10) || 0;
+    } else {
+        // 新建标记: 重绘全部 (但这个分支只会在首次新增时走到)
+        renderEditorMarkers();
+    }
+}
+
 async function saveMarker(e) {
 
     e.preventDefault();
@@ -1854,11 +2024,13 @@ async function saveMarker(e) {
 
         if (response.ok) {
             const newMarker = await response.json();
-            selectedMarkerId = newMarker.id; // 选中新创建的标记
-            await loadMarkers();
+            selectedMarkerId = newMarker.id;
+            // [优化] 推入历史, 允许 undo 修改
+            pushHistory(markerId ? '编辑标记' : '新建标记');
+            // [优化] 避免调用 loadMarkers() 重建全部 DOM, 只更新本个标记
+            await upsertMarkerLocal(newMarker);
             closeMarkerFormModal();
-        } else {
-            try {
+            showToast(markerId ? '标记已更新' : '标记已创建', 'success');         try {
                 const errData = await response.json();
                 console.error('Save failed:', errData);
                 alert(`保存失败: ${errData.error || errData.message || '未知错误'} (${response.status})`);
@@ -1885,21 +2057,34 @@ window.deleteMarker = async function (markerId) {
     if (!confirm('确定要删除这个标记吗？')) return;
 
     try {
+        // [优化] 推入历史 (在 DELETE 之前)
+        pushHistory('删除标记');
+
         const response = await fetch(`/api/markers/${markerId}`, {
             method: 'DELETE'
         });
 
         if (response.ok) {
-            if (markerId === selectedMarkerId) {
+            // [优化] 本地增量删除, 不重调 loadMarkers()
+            const idx = markers.findIndex(m => String(m.id) === String(markerId));
+            if (idx >= 0) markers.splice(idx, 1);
+            const el = editorMarkersContainer.querySelector(`.marker[data-id="${markerId}"]`);
+            if (el) el.remove();
+            if (String(markerId) === String(selectedMarkerId)) {
                 deselectMarker();
             }
-            await loadMarkers();
+            renderMarkersList();
+            showToast('标记已删除', 'success');
         } else {
             alert('删除失败，请重试');
+            if (undoStack.length > 0) undoStack.pop();
+            refreshHistoryButtons();
         }
     } catch (error) {
         console.error('Failed to delete marker:', error);
         alert('删除失败: ' + error.message);
+        if (undoStack.length > 0) undoStack.pop();
+        refreshHistoryButtons();
     }
 };
 
@@ -2020,7 +2205,6 @@ async function pasteMarkerToMap(x, y) {
         return;
     }
 
-    // Create new marker with copied data at new coordinates
     const newMarkerData = {
         ...copiedMarkerData,
         x: x,
@@ -2028,6 +2212,8 @@ async function pasteMarkerToMap(x, y) {
     };
 
     try {
+        pushHistory('粘贴标记');
+
         const response = await fetch('/api/markers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2036,16 +2222,20 @@ async function pasteMarkerToMap(x, y) {
 
         if (response.ok) {
             const newMarker = await response.json();
-            selectedMarkerId = newMarker.id; // 选中新粘贴的标记
-            await loadMarkers();
-            showToast('📋 标记已粘贴到地图');
+            selectedMarkerId = newMarker.id;
+            await upsertMarkerLocal(newMarker);
+            showToast('标记已粘贴到地图');
         } else {
             const errData = await response.json();
             showToast(`粘贴失败: ${errData.error || '未知错误'}`, 'error');
+            if (undoStack.length > 0) undoStack.pop();
+            refreshHistoryButtons();
         }
     } catch (error) {
         console.error('Failed to paste marker:', error);
         showToast('粘贴失败: ' + error.message, 'error');
+        if (undoStack.length > 0) undoStack.pop();
+        refreshHistoryButtons();
     }
 }
 
@@ -2282,15 +2472,16 @@ function selectMarker(markerId, event) {
 
     // 创建或更新选择�?
     createSelectionBox(marker, markerEl);
-
-    // 开始拖动标�?
+    // [优化] 记录拖拽起点但不立即启动
+    //   原逻辑: mousedown 即设 isDraggingMarker=true, 造成点选也会让标记跳远.
+    //   新逻辑: 设 pendingDrag=true; handleEditorMouseMove 中检测移动距离超过阈值才转为 drag.
     if (event && event.clientX !== undefined) {
-        isDraggingMarker = true;
         dragStartX = event.clientX;
         dragStartY = event.clientY;
         markerStartX = marker.x;
         markerStartY = marker.y;
-        markerEl.classList.add('dragging');
+        pendingDrag = true;
+        isDraggingMarker = false;
     }
 
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
@@ -2470,6 +2661,8 @@ let resizeStartBounds = null;
 
 // Start rotating
 function startRotate(event) {
+    inputLockZoom = true;  // [优化] 锁滚轮
+    pushHistory('旋转标记');  // [优化] 推入历史
     const marker = markers.find(m => m.id === selectedMarkerId);
     if (!marker) return;
 
@@ -2496,6 +2689,8 @@ function startRotate(event) {
 function startResize(handlePosition, event) {
     isResizing = true;
     resizeHandle = handlePosition;
+    inputLockZoom = true;  // [优化] 锁滚轮
+    pushHistory('缩放标记');  // [优化] 推入历史
 
     const marker = markers.find(m => m.id === selectedMarkerId);
     const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
@@ -2551,12 +2746,78 @@ function startResize(handlePosition, event) {
 // Handle mouse move for dragging and resizing
 document.addEventListener('mousemove', handleEditorMouseMove); // Ensure listener is here if not already
 
+// [优化] 只更新单个标记的尺寸 + 旋转 + 内部 icon 部分尺寸
+//   用于拖动/缩放/旋转 mousemove 中, 避免调用 updateEditorMarkerScales 重绘全部
+function applyMarkerTransform(marker, markerEl) {
+    const sizeMul = globalMarkerSizeMultiplier || 1.0;
+    const markerScale = marker.scale || 1.0;
+    const rotation = marker.rotation || 0;
+    const isText = marker.type === 'text';
+    const isShape = marker.type === 'shape';
+
+    if (isText || isShape) {
+        if (isText && !marker.width) {
+            markerEl.style.width = 'max-content';
+        } else {
+            const baseW = marker.width || (48 * markerScale);
+            markerEl.style.width = (baseW * sizeMul) + 'px';
+        }
+        if (isText && !marker.height) {
+            markerEl.style.height = 'max-content';
+        } else {
+            const baseH = marker.height || (32 * markerScale);
+            markerEl.style.height = (baseH * sizeMul) + 'px';
+        }
+        if (isText) {
+            const label = markerEl.querySelector('.text-label');
+            if (label) {
+                const fontPx = (marker.fontSize || 14) * sizeMul;
+                label.style.fontSize = fontPx + 'px';
+            }
+        }
+        markerEl.style.transformOrigin = 'center center';
+        markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
+    } else {
+        const targetSize = EDITOR_MARKER_BASE * markerScale * sizeMul;
+        const iconPart = markerEl.querySelector('.marker-icon-part');
+        if (iconPart) {
+            iconPart.style.width = targetSize + 'px';
+            iconPart.style.height = targetSize + 'px';
+        }
+        const labelPart = markerEl.querySelector('.marker-label-part');
+        if (labelPart) {
+            const fontPx = EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE);
+            labelPart.style.fontSize = fontPx + 'px';
+        }
+        markerEl.style.transformOrigin = '50% 100%';
+        markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg) scale(${editorScale})`;
+    }
+}
+
 function handleEditorMouseMove(e) {
+    // [优化] 优先处理 pendingDrag: mousedown 后未超过阈值, 这里检测是否需要正式进入 drag
+    if (pendingDrag && !isDraggingMarker && !isResizing && !isRotating && selectedMarkerId) {
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+            isDraggingMarker = true;
+            pendingDrag = false;
+            const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+            if (markerEl) markerEl.classList.add('dragging');
+            markerStartX = markerStartX + (dx / editorScale);
+            markerStartY = markerStartY + (dy / editorScale);
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            // 拖拽起始: 在这里推入历史, 后续操作可以 undo
+            pushHistory('拖动标记');
+        } else {
+            return;
+        }
+    }
+
     if (isRotating && selectedMarkerId) {
-        // 旋转标记: 计算鼠标相对标记中心的角�? 减去起始角度得到增量
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
-
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
         if (!markerEl) return;
 
@@ -2574,9 +2835,9 @@ function handleEditorMouseMove(e) {
         if (newRotation < -180) newRotation += 360;
 
         marker.rotation = newRotation;
-        updateEditorMarkerScales();
+        // [优化] 只更新被旋转的标记
+        applyMarkerTransform(marker, markerEl);
 
-        // 同步表单旋转字段 (仅当该标记的编辑表单已打开)
         const rotField = document.getElementById('markerRotation');
         const idField = document.getElementById('markerId');
         if (rotField && idField && idField.value === selectedMarkerId) {
@@ -2586,27 +2847,22 @@ function handleEditorMouseMove(e) {
     }
 
     if (isDraggingMarker && selectedMarkerId) {
-        // 拖动标记: markers-layer 屏幕像素坐标, �?updateEditorMarkerScales 保持一�?
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
         const deltaX = (e.clientX - dragStartX) / editorScale;
         const deltaY = (e.clientY - dragStartY) / editorScale;
-
         marker.x = markerStartX + deltaX;
         marker.y = markerStartY + deltaY;
 
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
         if (markerEl) {
-            // 源坐�?-> 屏幕像素: editorMapImage.transform = translate(tx, ty) scale(s)
-            // 标记�?(markers-layer) �?mapWrapper 同坐�? 直接用编辑器 transform
+            // [优化] 只更新被拖动的标记屏幕坐标
             const screenX = editorTranslateX + marker.x * editorScale;
             const screenY = editorTranslateY + marker.y * editorScale;
             markerEl.style.left = screenX + 'px';
             markerEl.style.top = screenY + 'px';
 
-            // 选中框跟�?- �?syncSelectionBoxToSelected 一�? AABB 中心定位
-            // containerRect 在外面算一�? 拖动期间 markers-layer 不动
             if (selectionBox) {
                 const containerRect = editorMarkersContainer.getBoundingClientRect();
                 const markerRect = markerEl.getBoundingClientRect();
@@ -2616,37 +2872,27 @@ function handleEditorMouseMove(e) {
                 selectionBox.style.top = centerY + 'px';
             }
         }
-    } else if (isResizing && selectedMarkerId && resizeStartBounds) {
+        return;
+    }
+
+    if (isResizing && selectedMarkerId && resizeStartBounds) {
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (!marker) return;
 
         const rect = editorMapWrapper.getBoundingClientRect();
-        
-        // Get current mouse position in map coordinates
         const mouseX = (e.clientX - rect.left - editorTranslateX) / editorScale;
         const mouseY = (e.clientY - rect.top - editorTranslateY) / editorScale;
 
         const {
-            startX,
-            startY,
-            startWidth,
-            startHeight,
-            startLocalX,
-            startLocalY,
-            rotation,
-            theta,
-            markerScale,
-            isText,
-            isShape
+            startX, startY, startWidth, startHeight,
+            startLocalX, startLocalY,
+            theta, markerScale, isText, isShape
         } = resizeStartBounds;
 
-        // Current mouse position in original local coordinates
         const dx = mouseX - startX;
         const dy = mouseY - startY;
         const currentLocalX = dx * Math.cos(theta) + dy * Math.sin(theta);
         const currentLocalY = -dx * Math.sin(theta) + dy * Math.cos(theta);
-
-        // Difference in local coordinates
         const diffLocalX = currentLocalX - startLocalX;
         const diffLocalY = currentLocalY - startLocalY;
 
@@ -2655,21 +2901,18 @@ function handleEditorMouseMove(e) {
         let newLocalCenterX = 0;
         let newLocalCenterY = 0;
 
-        // Calculate newWidth and newLocalCenterX
         if (resizeHandle.includes('e')) {
             newWidth = startWidth + diffLocalX;
-            newWidth = Math.max(10, newWidth); // minimum width on map
+            newWidth = Math.max(10, newWidth);
             newLocalCenterX = -startWidth / 2 + newWidth / 2;
         } else if (resizeHandle.includes('w')) {
             newWidth = startWidth - diffLocalX;
             newWidth = Math.max(10, newWidth);
             newLocalCenterX = startWidth / 2 - newWidth / 2;
         }
-
-        // Calculate newHeight and newLocalCenterY
         if (resizeHandle.includes('s')) {
             newHeight = startHeight + diffLocalY;
-            newHeight = Math.max(10, newHeight); // minimum height on map
+            newHeight = Math.max(10, newHeight);
             newLocalCenterY = -startHeight / 2 + newHeight / 2;
         } else if (resizeHandle.includes('n')) {
             newHeight = startHeight - diffLocalY;
@@ -2678,15 +2921,10 @@ function handleEditorMouseMove(e) {
         }
 
         if (isText || isShape) {
-            // 文字 / 形状标记: 自由 width/height, 跟地图独立缩放
             marker.width = newWidth;
             marker.height = newHeight;
-
-            // Calculate new global center on map (rotate projected local center changes back to map coordinates)
             marker.x = startX + newLocalCenterX * Math.cos(theta) - newLocalCenterY * Math.sin(theta);
             marker.y = startY + newLocalCenterX * Math.sin(theta) + newLocalCenterY * Math.cos(theta);
-
-            // Sync form coordinate fields if open
             const xField = document.getElementById('markerX');
             const yField = document.getElementById('markerY');
             const idField = document.getElementById('markerId');
@@ -2695,26 +2933,15 @@ function handleEditorMouseMove(e) {
                 yField.value = Math.round(marker.y);
             }
         } else {
-            // Icon marker: proportional scaling based on mouse coordinate distance
             let ratio = 1.0;
             let targetWidth = startWidth;
             let targetHeight = startHeight;
-
-            if (resizeHandle.includes('e')) {
-                targetWidth = startWidth + 2 * diffLocalX;
-            } else if (resizeHandle.includes('w')) {
-                targetWidth = startWidth - 2 * diffLocalX;
-            }
-
-            if (resizeHandle.includes('n')) {
-                targetHeight = startHeight - diffLocalY;
-            } else if (resizeHandle.includes('s')) {
-                targetHeight = startHeight + diffLocalY;
-            }
-
+            if (resizeHandle.includes('e')) targetWidth = startWidth + 2 * diffLocalX;
+            else if (resizeHandle.includes('w')) targetWidth = startWidth - 2 * diffLocalX;
+            if (resizeHandle.includes('n')) targetHeight = startHeight - diffLocalY;
+            else if (resizeHandle.includes('s')) targetHeight = startHeight + diffLocalY;
             if (resizeHandle.includes('e') || resizeHandle.includes('w')) {
                 if (resizeHandle.includes('n') || resizeHandle.includes('s')) {
-                    // Diagonal handles: use the maximum ratio to scale proportionally
                     ratio = Math.max(targetWidth / startWidth, targetHeight / startHeight);
                 } else {
                     ratio = targetWidth / startWidth;
@@ -2722,10 +2949,7 @@ function handleEditorMouseMove(e) {
             } else {
                 ratio = targetHeight / startHeight;
             }
-            
             marker.scale = Math.max(0.1, markerScale * ratio);
-            
-            // Sync form scale field if open
             const scaleField = document.getElementById('markerScale');
             const idField = document.getElementById('markerId');
             if (scaleField && idField && idField.value === selectedMarkerId) {
@@ -2733,9 +2957,15 @@ function handleEditorMouseMove(e) {
             }
         }
 
-        // Update display
-        updateEditorMarkerScales();
-        syncSelectionBoxToSelected();
+        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        if (markerEl) {
+            const screenX = editorTranslateX + marker.x * editorScale;
+            const screenY = editorTranslateY + marker.y * editorScale;
+            markerEl.style.left = screenX + 'px';
+            markerEl.style.top = screenY + 'px';
+            applyMarkerTransform(marker, markerEl);
+            syncSelectionBoxToSelected();
+        }
         updateScaleIndicator((isText || isShape) ? 1.0 : marker.scale);
     }
 }
@@ -2775,13 +3005,18 @@ function updateScaleIndicator(scale) {
 
 // Handle mouse up for dragging and resizing
 async function handleEditorMouseUp() {
+    // 如果还在 pendingDrag (点选未拖动), 清理状态即可
+    if (pendingDrag) {
+        pendingDrag = false;
+        isDraggingMarker = false;
+        return;
+    }
+
     if (isDraggingMarker && selectedMarkerId) {
         const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
         if (markerEl) {
             markerEl.classList.remove('dragging');
         }
-
-        // 保存标记位置
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (marker) {
             try {
@@ -2795,7 +3030,6 @@ async function handleEditorMouseUp() {
             }
         }
     } else if (isResizing && selectedMarkerId) {
-        // 保存标记大小
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (marker) {
             try {
@@ -2809,7 +3043,6 @@ async function handleEditorMouseUp() {
             }
         }
     } else if (isRotating && selectedMarkerId) {
-        // 保存标记旋转
         const marker = markers.find(m => m.id === selectedMarkerId);
         if (marker) {
             try {
@@ -2828,6 +3061,8 @@ async function handleEditorMouseUp() {
     isResizing = false;
     isRotating = false;
     resizeHandle = null;
+    pendingDrag = false;
+    inputLockZoom = false;
 }
 
 // Add global mouse event listeners
