@@ -121,6 +121,9 @@
     font-weight: 600;
     font-size: 14px;
     color: var(--text-primary);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .menu-item:hover {
@@ -164,6 +167,9 @@
 
 .admin-tab {
     display: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .admin-tab.active {
@@ -269,6 +275,9 @@
     /* Fill available height */
     min-height: 500px;
     flex: 1;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .map-editor {

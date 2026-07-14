@@ -743,6 +743,12 @@ function setupAdminListeners() {
     editorMapWrapper.addEventListener('mouseleave', endEditorDrag);
 
     // Editor wheel zoom
+    // [优化] 全局拦截 dragstart, 防止拖动时选中文字触发原生 drag 出现卡顿瞬移
+    document.addEventListener('dragstart', (e) => { e.preventDefault(); });
+    document.addEventListener('mousedown', (e) => {
+        if (e.target && e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
+        try { const sel = window.getSelection && window.getSelection(); if (sel && sel.rangeCount > 0) sel.removeAllRanges(); } catch (_) {}
+    }, true);
     editorMapWrapper.addEventListener('wheel', (e) => {
         // [优化] 拖动/缩放/旋转期间禁止滚轮缩放, 避免“拖着拖着就被放大几倍”
         if (inputLockZoom || isDraggingMarker || isResizing || isRotating || pendingDrag) return;
@@ -2485,6 +2491,8 @@ function selectMarker(markerId, event) {
         markerStartY = marker.y;
         pendingDrag = true;
         isDraggingMarker = false;
+        // [优化] 拖拽/点选前先清掉当前选区, 避免拖动时文本被选中导致卡顿瞬移
+        try { window.getSelection && window.getSelection().removeAllRanges(); } catch (_) {}
     }
 
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
