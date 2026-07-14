@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.env
+.git
+.gitignore
+README.md
+*.md
+.DS_Store
+Thumbs.db
+
+# Exclude all data files except default ones
+data/*
+!data/default-*.json
+
+# Exclude uploads directory
+uploads/

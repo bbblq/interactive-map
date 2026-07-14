@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  interactive-map:
+    build: .
+    container_name: interactive-map
+    ports:
+      - "3000:3000"
+    volumes:
+      # 持久化数据文件
+      - interactive-map-data:/app/data
+      # 持久化上传文件
+      - interactive-map-uploads:/app/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - SESSION_SECRET=${SESSION_SECRET:-change-this-secret-in-production}
+      - MAX_FILE_SIZE=10485760
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  interactive-map-data:
+    driver: local
+  interactive-map-uploads:
+    driver: local

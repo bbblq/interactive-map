@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>互动地图 - Interactive Map</title>
+  <link rel="stylesheet" href="style.css?v=1.5.9">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon" id="headerLogoContainer">
+        <img id="headerLogo" src="" alt="Logo" style="display: none; width: 100%; height: 100%; object-fit: contain;">
+        <span id="defaultLogoIcon">🗺️</span>
+      </div>
+      <h1 id="headerTitle">互动地图</h1>
+    </div>
+    <div class="search-container">
+      <input type="text" id="searchInput" class="search-input" placeholder="🔍 搜索标记、人员、部门...">
+      <div id="searchResults" class="search-results"></div>
+    </div>
+    <div class="header-actions" style="display:flex;gap:8px;align-items:center;margin-left:12px;">
+      <button id="exportBtn" class="btn btn-secondary" title="导出地图 (JPG / PDF)" style="white-space:nowrap;">⬇ 导出</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="container">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-toggle" id="sidebarToggle">→</div>
+      <div class="sidebar-content">
+        <h2>📍 标记分类</h2>
+        <div class="category-actions" id="categoryActions">
+          <button class="cat-action-btn" onclick="showAllCategories()">👁 全部显示</button>
+          <button class="cat-action-btn" onclick="hideAllCategories()">🚫 全部隐藏</button>
+        </div>
+        <div id="categories"></div>
+        
+        <!-- Footer -->
+        <div class="sidebar-footer">
+          <a href="https://github.com/bbblq/interactive-map" target="_blank" rel="noopener noreferrer">
+            Powered by bbblq
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Map Container -->
+    <main class="map-container">
+      <div id="mapWrapper" class="map-wrapper">
+        <div id="mapImage" class="map-image">
+          <img id="mapImg" src="" alt="互动地图" decoding="async" fetchpriority="high" style="display: none;">
+        </div>
+        <!-- 标记层: 位于 mapWrapper 内, mapImage 之外, 独立屏幕像素坐标系,
+             不受 mapImage.transform: scale() 影响, 保证 SVG/文字按屏幕像素栅格化, 矢量清晰 -->
+        <div id="markers" class="markers-layer"></div>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state">
+        <div class="empty-state-icon">🗺️</div>
+        <h3>暂无地图</h3>
+        <p>请前往管理后台上传办公室平面图</p>
+        <a href="/admin" class="btn btn-primary">前往管理后台</a>
+      </div>
+
+      <!-- Zoom Controls -->
+      <div class="zoom-controls" id="zoomControls" style="display: none;">
+        <button class="zoom-btn" id="zoomIn">+</button>
+        <div class="zoom-level" id="zoomLevel">100%</div>
+        <button class="zoom-btn" id="zoomOut">−</button>
+        <button class="zoom-btn" id="resetZoom">⟲</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Marker Detail Modal -->
+  <div id="markerModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">标记详情</h2>
+        <button class="close-btn" id="closeModal">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Content will be populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div id="exportModal" class="export-modal">
+    <div class="export-modal-content">
+      <div class="export-modal-title">⬇ 导出地图</div>
+
+      <div class="export-modal-row">
+        <label>格式</label>
+        <div class="export-format-grid" id="exportFormatGrid">
+          <div class="export-format-card selected" data-format="jpg">
+            <span class="icon">🖼</span>
+            <div class="label">JPG 图片</div>
+            <div class="desc">光栅位图, 不可搜索</div>
+          </div>
+          <div class="export-format-card" data-format="pdf">
+            <span class="icon">📄</span>
+            <div class="label">PDF 文档</div>
+            <div class="desc">矢量图标, 文字可搜索</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="export-modal-row">
+        <label>导出范围</label>
+        <div class="export-range-grid" id="exportRangeGrid">
+          <div class="export-range-card selected" data-range="viewport">
+            <div class="label">当前可见视野</div>
+            <div class="desc">屏幕上的内容</div>
+          </div>
+          <div class="export-range-card" data-range="full">
+            <div class="label">完整地图</div>
+            <div class="desc">原图全幅, 不受缩放影响</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="export-status" id="exportStatus"></div>
+
+      <div class="export-modal-actions">
+        <button type="button" class="btn btn-secondary" id="exportCancelBtn">取消</button>
+        <button type="button" class="btn btn-primary" id="exportConfirmBtn">开始导出</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2/dist/svg2pdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="app.js?v=1.5.9"></script>
+</body>
+
+</html>

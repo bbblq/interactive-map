@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+npm-debug.log
+*.log
+
+# Environment variables
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Persistent Data (User data should not be in git)
+data/*.json
+!data/default-*.json
+data/auto-backup-*.json
+data/*.db*
+data/*.bak
+
+# Uploads (User uploads should not be in git)
+uploads/*
+!uploads/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
+
+# Local dev artifacts
+public/fonts/
+scratch/
+

@@ -1,0 +1,53 @@
+[
+  {
+    "id": "1",
+    "type": "icon",
+    "x": 800,
+    "y": 600,
+    "scale": 2,
+    "showDetails": true,
+    "category": "printer",
+    "showIcon": true,
+    "label": "打印机A",
+    "showLabel": true,
+    "description": "这是一台示例打印机",
+    "department": "行政部",
+    "phone": "",
+    "email": "",
+    "details": "默认示例标记，可以直接删除。"
+  },
+  {
+    "id": "2",
+    "type": "icon",
+    "x": 1200,
+    "y": 600,
+    "scale": 2,
+    "showDetails": true,
+    "category": "person",
+    "showIcon": true,
+    "label": "张三",
+    "showLabel": true,
+    "description": "研发部员工",
+    "department": "研发部",
+    "phone": "",
+    "email": "",
+    "details": "默认示例标记，可以直接删除。"
+  },
+  {
+    "id": "3",
+    "type": "icon",
+    "x": 1000,
+    "y": 800,
+    "scale": 2.5,
+    "showDetails": true,
+    "category": "wifi",
+    "showIcon": true,
+    "label": "无线网络",
+    "showLabel": true,
+    "description": "",
+    "department": "",
+    "phone": "",
+    "email": "",
+    "details": "默认示例标记，可以直接删除。"
+  }
+]
