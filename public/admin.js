@@ -1520,6 +1520,10 @@ function getMarkerDisplayName(marker) {
 
 // Render markers list — grouped by category with collapse/expand and visibility
 function renderMarkersList() {
+    // 刷新标题旁的数量徽章
+    const badge = document.getElementById('markersCountBadge');
+    if (badge) badge.textContent = String(markers.length);
+
     if (markers.length === 0) {
         markersList.innerHTML = '<div class="empty-preview"><p>暂无标记</p></div>';
         return;

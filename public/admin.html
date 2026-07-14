@@ -113,18 +113,31 @@
                         </div>
 
                         <div class="markers-list">
-                            <div class="markers-list-toolbar">
-                                <h3>标记列表</h3>
-                                <div class="markers-list-actions">
-                                    <button class="ml-action-btn" id="undoBtn" onclick="undoLastChange()" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
-                                    <button class="ml-action-btn" id="redoBtn" onclick="redoLastChange()" title="重做 (Ctrl+Shift+Z)" disabled>↷ 重做</button>
-                                    <button class="ml-action-btn" onclick="showAllAdminCategories()" title="全部显示">👁 显示</button>
-                                    <button class="ml-action-btn" onclick="hideAllAdminCategories()" title="全部隐藏">🚫 隐藏</button>
+                            <div class="ml-header">
+                                <div class="ml-header-title">
+                                    <span class="ml-title-icon">📋</span>
+                                    <h3>标记列表</h3>
+                                    <span class="ml-count" id="markersCountBadge">0</span>
+                                </div>
+                                <div class="ml-toolbar">
+                                    <button class="ml-tool ml-tool-history" id="undoBtn" onclick="undoLastChange()" title="撤销 (Ctrl+Z)" disabled>
+                                        <span class="ml-tool-icon">↶</span>
+                                    </button>
+                                    <button class="ml-tool ml-tool-history" id="redoBtn" onclick="redoLastChange()" title="重做 (Ctrl+Shift+Z)" disabled>
+                                        <span class="ml-tool-icon">↷</span>
+                                    </button>
+                                    <span class="ml-tool-sep"></span>
+                                    <button class="ml-tool" onclick="showAllAdminCategories()" title="全部显示">
+                                        <span class="ml-tool-icon">👁️</span>
+                                    </button>
+                                    <button class="ml-tool" onclick="hideAllAdminCategories()" title="全部隐藏">
+                                        <span class="ml-tool-icon">🚫</span>
+                                    </button>
                                 </div>
                             </div>
-                            <div class="markers-list-hint" id="historyHint">提示：Ctrl+Z 撤销 · Ctrl+Shift+Z 重做 · 最多保留 50 步历史</div>
-                            <div class="markers-list-search">
-                                <input type="text" placeholder="搜索标记..." oninput="handleAdminMarkerSearch(event)">
+                            <div class="ml-search-wrap">
+                                <span class="ml-search-icon">🔍</span>
+                                <input type="text" class="ml-search-input" placeholder="搜索标记名称或分类..." oninput="handleAdminMarkerSearch(event)">
                             </div>
                             <div id="markersList" class="list-container">
                                 <!-- Markers will be populated here -->
