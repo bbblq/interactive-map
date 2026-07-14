@@ -2030,7 +2030,9 @@ async function saveMarker(e) {
             // [优化] 避免调用 loadMarkers() 重建全部 DOM, 只更新本个标记
             await upsertMarkerLocal(newMarker);
             closeMarkerFormModal();
-            showToast(markerId ? '标记已更新' : '标记已创建', 'success');         try {
+            showToast(markerId ? '标记已更新' : '标记已创建', 'success');
+        } else {
+            try {
                 const errData = await response.json();
                 console.error('Save failed:', errData);
                 alert(`保存失败: ${errData.error || errData.message || '未知错误'} (${response.status})`);
