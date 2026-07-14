@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express 的通用互动地图系统，支持高精度标记编辑、矢量级缩放、分类筛选、富文本详情、一键导出 (PNG/JPG) 与 Docker 一键部署。适用于办公室地图、校园导览、展会布局等多种场景。
 
-**版本**: v1.4.0 | **Node.js**: ≥18.0.0 | **许可证**: MIT | **Docker Hub**: `bbblq/interactive-map`
+**版本**: v1.6.1 | **Node.js**: ≥18.0.0 | **许可证**: MIT | **Docker Hub**: `bbblq/interactive-map`
 
 ---
 
@@ -27,11 +27,17 @@
   - **无字号大小限制**: 文字标记字号自由设定。
   - **无尺寸上限**: 标记宽高可任意大。
 - **旋转 (v1.3.0)**: 标记支持 0–360° 任意旋转，旋转手柄实时预览。
-- **层级 / Z-Order (v1.3.0)**: 标记可设 zIndex，数字大者覆盖在上，含"⤒︎ 顶层" / "⤓︎ 底层"快捷按钮。
+- **层级 / Z-Order (v1.3.0+)**: 标记可设 zIndex，数字大者覆盖在上。后台支持表单快捷按钮（顶层 / 底层）和右键菜单 4 项（置于顶层 / 上移一层 / 下移一层 / 置于底层），已到边界时按钮自动禁用。
 - **复制 / 粘贴标记 (v1.3.0)**: 后台选中标记后按 `Ctrl+C` / `Ctrl+V` 复制，rotation 和 zIndex 一起复制。
+- **撤销 / 重做 (v1.6.0)**: 最多 50 步操作历史，`Ctrl+Z` 撤销 / `Ctrl+Shift+Z`（或 `Ctrl+Y`）重做，覆盖移动 / 缩放 / 旋转 / 层级 / 复制 / 粘贴 / 删除 / 编辑等所有改动。
+- **拖拽防卡顿 (v1.6.0)**: 后台拖动标记时拦截浏览器原生文字选区与 dragstart，避免出现"瞬移"或选中文本触发的卡顿。
+- **缩放锚点居中 (v1.6.0)**: 标记缩放锚点统一改为 `center`，不再出现底部居中导致的"视觉跳变"。
 - **富文本详情**: 标记详情支持粗体、斜体、下划线及超链接（新标签页打开，`rel="noopener noreferrer"`）。
 - **批量操作**: 复制粘贴、键盘快捷键、Undo 支持。
 - **双向高亮高光**: 选中标记时，地图与后台列表双向同步高亮，自动滚动定位。
+
+### 🎨 后台 UI 优化 (v1.6.1)
+- 标记列表头部重新设计：圆角工具栏 + 图标化按钮（撤销 / 重做 / 显示 / 隐藏）、数量徽章、内嵌搜索图标的搜索框。
 
 ### 🎨 侧边栏与多视图分类筛选
 - **多视图管理与专属路由 (v1.4.0)**: 支持在后台配置多个独立的地图视图（如 `/cctv`），每个视图可单独绑定允许展示的标记分类，通过专属链接访问时地图与侧边栏自动实现精准过滤。
@@ -150,13 +156,9 @@ npm start
 
 系统使用两个 Docker Volume 持久化数据:
 
-1. **`interactive-map-data`** - 存储配置数据
-   - `markers.json` - 标记数据
-   - `categories.json` - 分类数据
-   - `icon-types.json` - 图标类型
-   - `settings.json` - 系统设置
-   - `map.json` - 地图信息
-   - `auto-backup-*.json` - 自动备份
+1. **`interactive-map-data`** - 存储配置数据 (SQLite 数据库)
+   - `map.db` - 主数据库 (markers / categories / icon-types / settings / map 全部存于此)
+   - `default-*.json` - 首次启动时的种子数据 (只读)
 
 2. **`interactive-map-uploads`** - 存储上传文件
    - 地图图片
@@ -257,7 +259,7 @@ docker-compose restart
 
 - **后端**: Node.js + Express
 - **前端**: 原生 JavaScript + HTML5 + CSS3 (Flexbox/Grid)
-- **数据存储**: JSON 文件
+- **数据存储**: SQLite (better-sqlite3)，单文件 `data/map.db`，启动时自动迁移 default-* JSON
 - **会话管理**: express-session
 - **安全**: bcrypt, express-validator, express-rate-limit
 - **导出**: html2canvas (DOM 序列化导出)
@@ -271,25 +273,26 @@ docker-compose restart
 interactive-map/
 ├── server.js              # Express 服务器主文件
 ├── config.js              # 配置管理模块
+├── db.js                  # SQLite 数据访问层 (better-sqlite3)
 ├── backup-utils.js        # 备份工具模块
+├── views-management.js    # 多视图管理模块
 ├── package.json           # 项目依赖
 ├── Dockerfile             # Docker 镜像配置
 ├── docker-compose.yml     # Docker Compose 配置
 ├── .dockerignore          # Docker 忽略文件
 ├── .env.example           # 环境变量示例
 ├── public/                # 前端静态文件
-│   ├── index.html         # 前端主页
-│   ├── admin.html         # 管理后台页面
-│   ├── app.js             # 前端逻辑
-│   ├── admin.js           # 管理后台逻辑
-│   ├── style.css          # 前端样式
-│   └── admin.css          # 管理后台样式
-├── data/                  # 数据文件 (持久化)
-│   ├── markers.json       # 标记数据
-│   ├── categories.json    # 分类数据
-│   ├── icon-types.json    # 图标类型
-│   ├── settings.json      # 系统设置
-│   └── map.json           # 地图信息
+│   ├── index.html             # 前端主页
+│   ├── admin.html             # 管理后台页面
+│   ├── app.js                 # 前端逻辑
+│   ├── admin.js               # 管理后台逻辑
+│   ├── icons.js               # 内置 SVG 图标库
+│   ├── rich-text-editor.css   # 富文本编辑器样式
+│   ├── style.css              # 前端样式
+│   └── admin.css              # 管理后台样式
+├── data/                  # 数据文件 (持久化, SQLite)
+│   ├── map.db              # 主数据库 (markers / categories / icon-types / settings / map)
+│   └── default-*.json      # 首次启动时的种子数据 (只读)
 └── uploads/               # 上传文件 (持久化)
     ├── map-*.jpg          # 地图图片
     └── icon-*.png         # 自定义图标
@@ -310,11 +313,28 @@ interactive-map/
 不会！只要使用了 Docker Volume 挂载 `/app/data` 和 `/app/uploads`，所有数据都会保留。
 
 ### 4. 导出的图为什么看起来跟我看到的不一样?
-v1.3.0 之前使用 canvas 手动重绘，可能与 DOM 略有差异。v1.3.0 起改用 `html2canvas` 直接序列化 DOM，所见即所得。
+v1.3.0 之前使用 canvas 手动重绘，可能与 DOM 略有差异。v1.3.0 起改用 `html2canvas` 直接序列化 DOM，所见即所得；v1.4.0 起新增 PDF 导出，文字层可搜索、SVG 矢量保留。
 
 ---
 
 ## 📜 更新日志
+
+### v1.6.1 (2026-07)
+- ✨ 后台右键菜单新增"层级"功能：置于顶层 / 上移一层 / 下移一层 / 置于底层，已在边界时按钮自动禁用
+- ✨ 标记列表头部 UI 重新设计：渐变图标徽章 + 数量徽章 + 图标化工具栏 + 内嵌搜索图标
+- 🐛 修复后台拖拽时文本被选中导致的卡顿瞬移（拖拽前清选区 + 拦截 dragstart）
+- 🐛 修复标记缩放锚点非中心导致的视觉跳变（统一改为 `center`）
+- 🐛 修复保存标记时偶发的 500 错误（`saveMarker` else 分支补全）
+
+### v1.6.0 (2026-06)
+- ✨ 撤销 / 重做（Undo / Redo）：50 步操作历史，`Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` 全场景覆盖
+- ✨ 性能优化：拖拽 / 缩放 / 旋转期间不再调用 `loadMarkers()` 全量重绘，改为增量更新
+- 🗄️ 数据存储迁移到 SQLite（better-sqlite3），单文件 `data/map.db`，启动自动迁移 default-* JSON
+- 🐛 修复后台文字标记拖拽时的位置漂移
+
+### v1.5.x (2026-06)
+- 🗄️ 数据层重构：引入 better-sqlite3，为后续多用户 / 高并发场景做准备
+- 🧹 备份 / 恢复流程优化
 
 ### v1.4.0 (2026-06)
 - ✨ 新增多视图管理功能：后台可自由配置多个专属路由（如 `/cctv`），单独向访客展示指定的标记分类，并支持精美的平铺式卡片勾选界面
