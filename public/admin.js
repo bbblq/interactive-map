@@ -1087,8 +1087,8 @@ function updateEditorMarkerScales() {
                 capsule.style.padding = '4px';
                 capsule.style.borderRadius = '30px';
             }
-            markerEl.style.transformOrigin = '50% 100%';
-            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg) scale(${editorScale})`;
+            markerEl.style.transformOrigin = 'center center';
+            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
         }
     }
 }
@@ -1300,7 +1300,8 @@ function updateTempMarkerPosition() {
         iconPart.style.width = targetSize + 'px';
         iconPart.style.height = targetSize + 'px';
     }
-    tempMarker.style.transform = `translate(-50%, -100%)`;
+    tempMarker.style.transformOrigin = 'center center';
+    tempMarker.style.transform = 'translate(-50%, -50%)';
 }
 
 function startTempMarkerDrag(e) {
@@ -2791,8 +2792,8 @@ function applyMarkerTransform(marker, markerEl) {
             const fontPx = EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE);
             labelPart.style.fontSize = fontPx + 'px';
         }
-        markerEl.style.transformOrigin = '50% 100%';
-        markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg) scale(${editorScale})`;
+        markerEl.style.transformOrigin = 'center center';
+        markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
     }
 }
 
