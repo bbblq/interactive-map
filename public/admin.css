@@ -911,6 +911,13 @@
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     color: white;
 }
+.context-menu-item.disabled {
+    color: var(--text-secondary);
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 
 .context-menu-icon {
     font-size: 18px;

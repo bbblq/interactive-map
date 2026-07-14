@@ -2310,6 +2310,11 @@ function showContextMenu(e) {
     const editDivider = document.getElementById('editMarkerDivider');
     const pasteMenuItem = document.getElementById('pasteMarkerMenuItem');
     const pasteDivider = document.getElementById('pasteMarkerDivider');
+    const bringToFrontMenuItem = document.getElementById('bringToFrontMenuItem');
+    const bringForwardMenuItem = document.getElementById('bringForwardMenuItem');
+    const sendBackwardMenuItem = document.getElementById('sendBackwardMenuItem');
+    const sendToBackMenuItem = document.getElementById('sendToBackMenuItem');
+    const zOrderDivider = document.getElementById('zOrderDivider');
 
     if (markerElement && markerElement.dataset.id) {
         // 点击在标记上，显示复制、编辑和删除选项
@@ -2323,6 +2328,37 @@ function showContextMenu(e) {
         if (deleteMenuItem) deleteMenuItem.style.display = 'flex';
         editDivider.style.display = 'block';
 
+        // 显示层级菜单, 并根据当前标记是否已在顶层/底层禁用对应按钮
+        const targetMarker = markers.find(m => String(m.id) === String(contextMenuTargetMarkerId));
+        if (targetMarker) {
+            const myZ = parseInt(targetMarker.zIndex, 10) || 0;
+            let maxZ = myZ, minZ = myZ;
+            for (const mk of markers) {
+                const z = parseInt(mk.zIndex, 10) || 0;
+                if (z > maxZ) maxZ = z;
+                if (z < minZ) minZ = z;
+            }
+            // 已在顶层: 置顶/上移 都禁用
+            const atTop = (myZ >= maxZ);
+            // 已在底层: 置底/下移 都禁用
+            const atBottom = (myZ <= minZ);
+            setZMenuEnabled(bringToFrontMenuItem, !atTop);
+            setZMenuEnabled(bringForwardMenuItem, !atTop);
+            setZMenuEnabled(sendBackwardMenuItem, !atBottom);
+            setZMenuEnabled(sendToBackMenuItem, !atBottom);
+            bringToFrontMenuItem.style.display = 'flex';
+            bringForwardMenuItem.style.display = 'flex';
+            sendBackwardMenuItem.style.display = 'flex';
+            sendToBackMenuItem.style.display = 'flex';
+            zOrderDivider.style.display = 'block';
+        } else {
+            bringToFrontMenuItem.style.display = 'none';
+            bringForwardMenuItem.style.display = 'none';
+            sendBackwardMenuItem.style.display = 'none';
+            sendToBackMenuItem.style.display = 'none';
+            zOrderDivider.style.display = 'none';
+        }
+
         // 隐藏粘贴选项
         pasteMenuItem.style.display = 'none';
         pasteDivider.style.display = 'none';
@@ -2333,6 +2369,11 @@ function showContextMenu(e) {
         editMenuItem.style.display = 'none';
         if (deleteMenuItem) deleteMenuItem.style.display = 'none';
         editDivider.style.display = 'none';
+        bringToFrontMenuItem.style.display = 'none';
+        bringForwardMenuItem.style.display = 'none';
+        sendBackwardMenuItem.style.display = 'none';
+        sendToBackMenuItem.style.display = 'none';
+        zOrderDivider.style.display = 'none';
 
         // 如果有复制的数据，显示粘贴选项
         if (hasCopiedData) {
@@ -2352,6 +2393,100 @@ function showContextMenu(e) {
 
 function hideContextMenu() {
     contextMenu.classList.remove('active');
+}
+
+
+function setZMenuEnabled(menuItem, enabled) {
+    if (!menuItem) return;
+    if (enabled) {
+        menuItem.classList.remove('disabled');
+    } else {
+        menuItem.classList.add('disabled');
+    }
+}
+
+// Compute new z-index based on action. Returns null when no-op (already at top/bottom).
+function computeNextZ(action, marker) {
+    const myZ = parseInt(marker.zIndex, 10) || 0;
+    if (action === 'bring-to-front') {
+        let maxZ = myZ;
+        for (const mk of markers) { const z = parseInt(mk.zIndex, 10) || 0; if (z > maxZ) maxZ = z; }
+        if (myZ >= maxZ) return null;
+        return maxZ + 1;
+    }
+    if (action === 'send-to-back') {
+        let minZ = myZ;
+        for (const mk of markers) { const z = parseInt(mk.zIndex, 10) || 0; if (z < minZ) minZ = z; }
+        if (myZ <= minZ) return null;
+        return minZ - 1;
+    }
+    // bring-forward / send-backward: swap with sorted neighbour
+    const sorted = markers.slice().sort((a, b) => (parseInt(a.zIndex, 10) || 0) - (parseInt(b.zIndex, 10) || 0));
+    const myId = String(marker.id);
+    const idx = sorted.findIndex(m => String(m.id) === myId);
+    if (idx === -1) return null;
+    if (action === 'bring-forward') {
+        if (idx === sorted.length - 1) return null;
+        const nextZ = parseInt(sorted[idx + 1].zIndex, 10) || 0;
+        return Math.max(myZ, nextZ) + 1;
+    }
+    if (action === 'send-backward') {
+        if (idx === 0) return null;
+        const prevZ = parseInt(sorted[idx - 1].zIndex, 10) || 0;
+        return Math.min(myZ, prevZ) - 1;
+    }
+    return null;
+}
+
+// Right-click menu z-order action handler. Push history first, then PUT to persist.
+async function adjustMarkerZOrder(markerId, action) {
+    const marker = markers.find(m => String(m.id) === String(markerId));
+    if (!marker) { showToast('标记不存在', 'error'); return; }
+    const newZ = computeNextZ(action, marker);
+    if (newZ === null) {
+        const labelMap = {
+            'bring-to-front': '已在顶层',
+            'bring-forward': '已在顶层',
+            'send-backward': '已在底层',
+            'send-to-back': '已在底层',
+        };
+        showToast(labelMap[action] || '无需调整', 'info');
+        return;
+    }
+    const actionLabelMap = {
+        'bring-to-front': '置于顶层',
+        'bring-forward': '上移一层',
+        'send-backward': '下移一层',
+        'send-to-back': '置于底层',
+    };
+    const label = actionLabelMap[action] || '调整层级';
+
+    try {
+        pushHistory(label);
+        // Update memory + DOM immediately for instant feedback
+        marker.zIndex = newZ;
+        const markerEl = document.querySelector(`.marker[data-id="${markerId}"]`);
+        if (markerEl) markerEl.style.zIndex = newZ;
+
+        const response = await fetch(`/api/markers/${markerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(marker)
+        });
+        if (!response.ok) {
+            if (undoStack.length > 0) undoStack.pop();
+            refreshHistoryButtons();
+            showToast('层级保存失败', 'error');
+            return;
+        }
+        renderMarkersList();
+        showToast(label + '成功', 'success');
+    } catch (error) {
+        console.error('Failed to adjust z-order:', error);
+        showToast('层级调整失败: ' + error.message, 'error');
+        if (undoStack.length > 0) undoStack.pop();
+        refreshHistoryButtons();
+    }
 }
 
 function handleContextMenuClick(e) {
@@ -2387,6 +2522,18 @@ function handleContextMenuClick(e) {
             if (contextMenuTargetMarkerId) {
                 deleteMarker(contextMenuTargetMarkerId);
             }
+            break;
+        case 'bring-to-front':
+            if (contextMenuTargetMarkerId) adjustMarkerZOrder(contextMenuTargetMarkerId, 'bring-to-front');
+            break;
+        case 'bring-forward':
+            if (contextMenuTargetMarkerId) adjustMarkerZOrder(contextMenuTargetMarkerId, 'bring-forward');
+            break;
+        case 'send-backward':
+            if (contextMenuTargetMarkerId) adjustMarkerZOrder(contextMenuTargetMarkerId, 'send-backward');
+            break;
+        case 'send-to-back':
+            if (contextMenuTargetMarkerId) adjustMarkerZOrder(contextMenuTargetMarkerId, 'send-to-back');
             break;
     }
 }

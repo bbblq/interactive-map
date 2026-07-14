@@ -820,6 +820,23 @@
             <span class="context-menu-label">删除当前标记</span>
         </div>
         <div class="context-menu-divider" id="editMarkerDivider" style="display: none;"></div>
+        <div class="context-menu-item" data-action="bring-to-front" id="bringToFrontMenuItem" style="display: none;">
+            <span class="context-menu-icon">⬆️</span>
+            <span class="context-menu-label">置于顶层</span>
+        </div>
+        <div class="context-menu-item" data-action="bring-forward" id="bringForwardMenuItem" style="display: none;">
+            <span class="context-menu-icon">↑</span>
+            <span class="context-menu-label">上移一层</span>
+        </div>
+        <div class="context-menu-item" data-action="send-backward" id="sendBackwardMenuItem" style="display: none;">
+            <span class="context-menu-icon">↓</span>
+            <span class="context-menu-label">下移一层</span>
+        </div>
+        <div class="context-menu-item" data-action="send-to-back" id="sendToBackMenuItem" style="display: none;">
+            <span class="context-menu-icon">⬇️</span>
+            <span class="context-menu-label">置于底层</span>
+        </div>
+        <div class="context-menu-divider" id="zOrderDivider" style="display: none;"></div>
         <div class="context-menu-item" data-action="paste-marker" id="pasteMarkerMenuItem" style="display: none;">
             <span class="context-menu-icon">📋</span>
             <span class="context-menu-label">粘贴标记到此处</span>
