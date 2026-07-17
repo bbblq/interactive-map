@@ -1242,6 +1242,19 @@ function registerPdfFont(doc) {
     }
 }
 
+// 防御性 PDF 字体恢复: svg2pdf.js 的 doc.svg() 会污染 jsPDF 内部字体状态,
+// 每次绘制文字前强制重新注册字体 (VFS + addFont + setFont), 确保中文不乱码.
+function ensurePdfFont(doc) {
+    if (!pdfFontBase64) { doc.setFont('Helvetica'); return; }
+    try {
+        doc.addFileToVFS('NotoSansSC-Regular.ttf', pdfFontBase64);
+        doc.addFont('NotoSansSC-Regular.ttf', 'NotoSansSC', 'normal');
+        doc.setFont('NotoSansSC');
+    } catch (e) {
+        try { doc.setFont('NotoSansSC'); } catch (_) { doc.setFont('Helvetica'); }
+    }
+}
+
 function loadImageAsync(url) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -1301,7 +1314,16 @@ async function drawSvgToPdf(doc, svgString, x, y, width, height, color) {
     const svgEl = svgDoc.documentElement;
     svgEl.setAttribute('width', String(width));
     svgEl.setAttribute('height', String(height));
-    try { await doc.svg(svgEl, { x, y, width, height }); } catch (e) { console.warn('PDF: SVG 渲染失败', e); }
+    // 用 saveGraphicsState/restoreGraphicsState 包裹 SVG 渲染,
+    // 隔离 svg2pdf.js 对 jsPDF 字体/颜色状态的破坏.
+    try {
+        doc.saveGraphicsState();
+        await doc.svg(svgEl, { x, y, width, height });
+        doc.restoreGraphicsState();
+    } catch (e) {
+        try { doc.restoreGraphicsState(); } catch (_) {}
+        console.warn('PDF: SVG 渲染失败', e);
+    }
 }
 
 async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
@@ -1317,7 +1339,7 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     const iconColor = (type && type.color) ? type.color : '#9e9e9e';
     const textColor = type.textColor || '#333333';
 
-    doc.setFont(pdfFontName);
+    ensurePdfFont(doc);
     doc.setFontSize(fontSize);
     const labelText = marker.label || '';
     const labelWidth = hasLabel ? doc.getTextWidth(labelText) : 0;
@@ -1369,7 +1391,7 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     }
 
     if (hasLabel) {
-        doc.setFont(pdfFontName);
+        ensurePdfFont(doc);
         doc.setFontSize(fontSize);
         applyPdfColor(doc, textColor, 'text');
         const textX = iconX + iconSize + labelPadLeft;
@@ -1419,7 +1441,7 @@ async function drawTextMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     const content = marker.content || marker.label || '';
     const textColor = marker.textColor || '#333333';
     if (content) {
-        doc.setFont(pdfFontName);
+        ensurePdfFont(doc);
         doc.setFontSize(fontSize);
         applyPdfColor(doc, textColor, 'text');
         doc.text(content, mx, my, { align: 'center', baseline: 'middle' });
