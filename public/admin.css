@@ -468,6 +468,71 @@
     color: var(--accent-color);
 }
 
+/* Lock / unlock button states */
+.icon-btn.lock-active {
+    color: var(--primary-color);
+    background: rgba(74, 144, 226, 0.12);
+    border: 1px solid rgba(74, 144, 226, 0.25);
+}
+
+.icon-btn.lock-active:hover {
+    background: rgba(74, 144, 226, 0.2);
+    color: var(--primary-color);
+}
+
+/* Locked marker item (in sidebar list) */
+.marker-item.locked {
+    background: linear-gradient(135deg, rgba(74, 144, 226, 0.06), rgba(123, 104, 238, 0.04));
+    border-color: rgba(74, 144, 226, 0.25);
+    cursor: default;
+}
+
+.marker-item.locked .marker-item-title {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.marker-locked-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    border-radius: 5px;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(74, 144, 226, 0.3);
+}
+
+/* Locked marker on map: outline + lock badge top-right corner */
+.marker.marker-locked {
+    cursor: not-allowed !important;
+    outline: 2px dashed rgba(74, 144, 226, 0.6);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+
+.marker.marker-locked > .marker-locked-corner {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    border: 2px solid #fff;
+    border-radius: 50%;
+    color: white;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(74, 144, 226, 0.4);
+    pointer-events: none;
+    z-index: 10;
+}
+
 .marker-item-info {
     font-size: 14px;
     color: var(--text-secondary);

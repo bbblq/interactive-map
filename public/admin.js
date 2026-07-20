@@ -1179,7 +1179,9 @@ function focusAdminMarker(markerId) {
     const marker = markers.find(m => String(m.id) === String(markerId));
     if (!marker) return;
 
-    selectMarker(markerId, null);
+    if (!isMarkerLocked(marker)) {
+        selectMarker(markerId, null);
+    }
     animateToAdminMarker(marker);
 }
 window.focusAdminMarker = focusAdminMarker;
@@ -1478,6 +1480,15 @@ function renderEditorMarkers() {
 
         // 添加点击事件，用于选中标记
         markerEl.addEventListener('mousedown', (e) => {
+            // 锁定的标记在地图上不可点选 (防误触); 仍可右键 / 侧边栏解锁
+            if (isMarkerLocked(marker)) {
+                e.stopPropagation();
+                if (e.button === 0) {
+                    e.preventDefault();
+                    showToast('标记已锁定，请在侧边栏解锁', 'info');
+                }
+                return;
+            }
             // 如果点击的是标记本身（不是调整手柄），选中�?
             if (!e.target.classList.contains('resize-handle')) {
                 e.stopPropagation();
@@ -1491,6 +1502,13 @@ function renderEditorMarkers() {
             focusAdminMarker(marker.id);
         });
 
+        if (isMarkerLocked(marker)) {
+            markerEl.classList.add('marker-locked');
+            const badge = document.createElement('div');
+            badge.className = 'marker-locked-corner';
+            badge.textContent = '\uD83D\uDD12';
+            markerEl.appendChild(badge);
+        }
         editorMarkersContainer.appendChild(markerEl);
     });
 
@@ -1597,8 +1615,9 @@ function renderMarkersList() {
             catMarkers.forEach(marker => {
                 const displayName = getMarkerDisplayName(marker);
                 const markerHidden = adminHiddenCategories.has(marker.category || 'other');
+                const markerLocked = isMarkerLocked(marker);
                 html += `
-                <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}${markerHidden ? ' marker-cat-hidden' : ''}"
+                <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}${markerHidden ? ' marker-cat-hidden' : ''}${markerLocked ? ' locked' : ''}"
                      data-id="${marker.id}"
                      tabindex="0"
                      onclick="selectMarkerFromList('${marker.id}')"
@@ -1607,12 +1626,15 @@ function renderMarkersList() {
                   <div class="marker-item-header">
                     <div class="marker-item-title">
                       <span class="marker-item-icon">${getMarkerIcon(marker.category)}</span>
-                      <span>${escapeHtml(displayName)}</span>
+                      <span class="marker-item-name">${escapeHtml(displayName)}</span>
+                      ${markerLocked ? '<span class="marker-locked-badge" title="已锁定（防误触）">🔒</span>' : ''}
                     </div>
                     <div class="marker-item-actions">
+                      <button class="icon-btn${markerLocked ? ' lock-active' : ''}" onclick="event.stopPropagation(); toggleMarkerLock('${marker.id}')" title="${markerLocked ? '解锁标记' : '锁定标记（防误触）'}">${markerLocked ? '🔓' : '🔒'}</button>
+                      ${markerLocked ? '' : `
                       <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
                       <button class="icon-btn" onclick="event.stopPropagation(); editMarker('${marker.id}')" title="编辑">✏️</button>
-                      <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑️</button>
+                      <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑️</button>`}
                     </div>
                   </div>
                   ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
@@ -1705,6 +1727,16 @@ function selectMarkerFromList(markerId) {
 
 // 处理列表项键盘事�?
 function handleMarkerListKeydown(event, markerId) {
+    if (event.target !== event.currentTarget) return;
+
+    const marker = markers.find(m => String(m.id) === String(markerId));
+    if (isMarkerLocked(marker) && (event.key === 'Delete' || event.key === 'Backspace' || event.key === 'Enter')) {
+        event.preventDefault();
+        event.stopPropagation();
+        showToast('标记已锁定，请先解锁', 'info');
+        return;
+    }
+
     if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
         event.stopPropagation();
@@ -2252,6 +2284,64 @@ async function pasteMarkerToMap(x, y) {
     }
 }
 
+function isMarkerLocked(marker) {
+    return !!(marker && marker.locked);
+}
+
+function updateMarkerLockVisual(marker) {
+    const markerEl = document.querySelector(`.marker[data-id="${CSS.escape(String(marker.id))}"]`);
+    if (!markerEl) return;
+
+    const locked = isMarkerLocked(marker);
+    markerEl.classList.toggle('marker-locked', locked);
+    const currentBadge = markerEl.querySelector('.marker-locked-corner');
+    if (locked && !currentBadge) {
+        const badge = document.createElement('div');
+        badge.className = 'marker-locked-corner';
+        badge.textContent = '\uD83D\uDD12';
+        markerEl.appendChild(badge);
+    } else if (!locked && currentBadge) {
+        currentBadge.remove();
+    }
+}
+
+async function toggleMarkerLock(markerId) {
+    const marker = markers.find(m => String(m.id) === String(markerId));
+    if (!marker) { showToast('标记不存在', 'error'); return; }
+
+    const wasLocked = isMarkerLocked(marker);
+    const wasSelected = String(selectedMarkerId) === String(markerId);
+
+    try {
+        pushHistory(wasLocked ? '解锁标记' : '锁定标记');
+        marker.locked = !wasLocked;
+        renderMarkersList();
+        updateMarkerLockVisual(marker);
+        // 刷新选中态视觉: 锁定后立即清掉选择框与 .selected
+        if (marker.locked && wasSelected) deselectMarker();
+
+        const response = await fetch(`/api/markers/${markerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(marker)
+        });
+        if (!response.ok) {
+            throw new Error('服务器未保存锁定状态');
+        }
+        showToast(marker.locked ? '已锁定，侧边栏可解锁' : '已解锁', 'success');
+    } catch (error) {
+        console.error('Failed to toggle lock:', error);
+        marker.locked = wasLocked;
+        if (undoStack.length > 0) undoStack.pop();
+        refreshHistoryButtons();
+        renderMarkersList();
+        updateMarkerLockVisual(marker);
+        if (wasSelected && !wasLocked) selectMarker(markerId, null);
+        showToast('锁定失败: ' + error.message, 'error');
+    }
+}
+window.toggleMarkerLock = toggleMarkerLock;
+
 // Update paste button visibility
 function updatePasteButtonVisibility() {
     const pasteBtn = document.getElementById('pasteMarkerBtn');
@@ -2319,13 +2409,13 @@ function showContextMenu(e) {
     const sendBackwardMenuItem = document.getElementById('sendBackwardMenuItem');
     const sendToBackMenuItem = document.getElementById('sendToBackMenuItem');
     const zOrderDivider = document.getElementById('zOrderDivider');
+    const toggleLockMenuItem = document.getElementById('toggleLockMenuItem');
+    const toggleLockIcon = document.getElementById('toggleLockIcon');
+    const toggleLockLabel = document.getElementById('toggleLockLabel');
 
     if (markerElement && markerElement.dataset.id) {
         // 点击在标记上，显示复制、编辑和删除选项
         contextMenuTargetMarkerId = markerElement.dataset.id;
-
-        // 自动选中标记，以便Ctrl+C可以工作
-        selectedMarkerId = markerElement.dataset.id;
 
         copyMenuItem.style.display = 'flex';
         editMenuItem.style.display = 'flex';
@@ -2355,6 +2445,28 @@ function showContextMenu(e) {
             sendBackwardMenuItem.style.display = 'flex';
             sendToBackMenuItem.style.display = 'flex';
             zOrderDivider.style.display = 'block';
+            // 锁定状态: 切换菜单图标 + 文案, 未锁定时正常显示所有项
+            const targetLocked = isMarkerLocked(targetMarker);
+            if (!targetLocked) {
+                // 未锁定标记右键时自动选中，便于 Ctrl+C；锁定标记不能进入编辑态
+                selectedMarkerId = markerElement.dataset.id;
+            }
+            if (toggleLockMenuItem) {
+                toggleLockMenuItem.style.display = 'flex';
+                if (toggleLockIcon) toggleLockIcon.textContent = targetLocked ? '🔓' : '🔒';
+                if (toggleLockLabel) toggleLockLabel.textContent = targetLocked ? '解锁当前标记' : '锁定当前标记';
+            }
+            // 锁定时: 隐藏复制/编辑/删除/层级, 仅留 解锁/粘贴/新增
+            if (targetLocked) {
+                copyMenuItem.style.display = 'none';
+                editMenuItem.style.display = 'none';
+                if (deleteMenuItem) deleteMenuItem.style.display = 'none';
+                bringToFrontMenuItem.style.display = 'none';
+                bringForwardMenuItem.style.display = 'none';
+                sendBackwardMenuItem.style.display = 'none';
+                sendToBackMenuItem.style.display = 'none';
+                zOrderDivider.style.display = 'none';
+            }
         } else {
             bringToFrontMenuItem.style.display = 'none';
             bringForwardMenuItem.style.display = 'none';
@@ -2378,6 +2490,7 @@ function showContextMenu(e) {
         sendBackwardMenuItem.style.display = 'none';
         sendToBackMenuItem.style.display = 'none';
         zOrderDivider.style.display = 'none';
+        if (toggleLockMenuItem) toggleLockMenuItem.style.display = 'none';
 
         // 如果有复制的数据，显示粘贴选项
         if (hasCopiedData) {
@@ -2522,6 +2635,9 @@ function handleContextMenuClick(e) {
                 openMarkerForm(contextMenuTargetMarkerId);
             }
             break;
+        case 'toggle-lock':
+            if (contextMenuTargetMarkerId) toggleMarkerLock(contextMenuTargetMarkerId);
+            break;
         case 'delete-marker':
             if (contextMenuTargetMarkerId) {
                 deleteMarker(contextMenuTargetMarkerId);
@@ -2607,9 +2723,13 @@ function selectMarker(markerId, event) {
     // 如果已经在拖动或调整大小，不处理
     if (isDraggingMarker || isResizing) return;
 
-    selectedMarkerId = markerId;
     const marker = markers.find(m => String(m.id) === String(markerId));
     if (!marker) return;
+    if (isMarkerLocked(marker)) {
+        showToast('标记已锁定，请在侧边栏解锁', 'info');
+        return;
+    }
+    selectedMarkerId = markerId;
 
     // 移除之前的地图选中状�?
     document.querySelectorAll('.marker.selected').forEach(el => el.classList.remove('selected'));
