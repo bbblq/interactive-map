@@ -1480,15 +1480,6 @@ function renderEditorMarkers() {
 
         // 添加点击事件，用于选中标记
         markerEl.addEventListener('mousedown', (e) => {
-            // 锁定的标记在地图上不可点选 (防误触); 仍可右键 / 侧边栏解锁
-            if (isMarkerLocked(marker)) {
-                e.stopPropagation();
-                if (e.button === 0) {
-                    e.preventDefault();
-                    showToast('标记已锁定，请在侧边栏解锁', 'info');
-                }
-                return;
-            }
             // 如果点击的是标记本身（不是调整手柄），选中�?
             if (!e.target.classList.contains('resize-handle')) {
                 e.stopPropagation();
@@ -1504,10 +1495,6 @@ function renderEditorMarkers() {
 
         if (isMarkerLocked(marker)) {
             markerEl.classList.add('marker-locked');
-            const badge = document.createElement('div');
-            badge.className = 'marker-locked-corner';
-            badge.textContent = '\uD83D\uDD12';
-            markerEl.appendChild(badge);
         }
         editorMarkersContainer.appendChild(markerEl);
     });
@@ -2294,15 +2281,6 @@ function updateMarkerLockVisual(marker) {
 
     const locked = isMarkerLocked(marker);
     markerEl.classList.toggle('marker-locked', locked);
-    const currentBadge = markerEl.querySelector('.marker-locked-corner');
-    if (locked && !currentBadge) {
-        const badge = document.createElement('div');
-        badge.className = 'marker-locked-corner';
-        badge.textContent = '\uD83D\uDD12';
-        markerEl.appendChild(badge);
-    } else if (!locked && currentBadge) {
-        currentBadge.remove();
-    }
 }
 
 async function toggleMarkerLock(markerId) {

@@ -506,31 +506,9 @@
     box-shadow: 0 1px 3px rgba(74, 144, 226, 0.3);
 }
 
-/* Locked marker on map: outline + lock badge top-right corner */
 .marker.marker-locked {
-    cursor: not-allowed !important;
-    outline: 2px dashed rgba(74, 144, 226, 0.6);
-    outline-offset: 3px;
-    border-radius: 6px;
-}
-
-.marker.marker-locked > .marker-locked-corner {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    width: 20px;
-    height: 20px;
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    border: 2px solid #fff;
-    border-radius: 50%;
-    color: white;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 6px rgba(74, 144, 226, 0.4);
-    pointer-events: none;
-    z-index: 10;
+    cursor: default !important;
+    pointer-events: none !important;
 }
 
 .marker-item-info {
