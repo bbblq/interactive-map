@@ -981,18 +981,18 @@
 
 /* Selected Marker Styles */
 .marker.selected {
-    z-index: 999998 !important;
+    z-index: 2147482999 !important;
 }
 
 .marker-selection-box {
     position: absolute;
     border: 2px solid var(--primary-color);
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 10px rgba(74, 144, 226, 0.5);
-    pointer-events: none;
+    pointer-events: auto;
     display: none;
-    z-index: 999999;
+    z-index: 2147483000;
     will-change: left, top, width, height;
-    contain: layout style;
+    isolation: isolate;
 }
 
 .marker-selection-box.active {
@@ -1004,17 +1004,41 @@
     position: absolute;
     width: 16px;
     height: 16px;
-    background: white;
-    border: 3px solid var(--primary-color);
+    background: rgba(255, 255, 255, 0.02);
+    border: 0;
     border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    pointer-events: all;
-    z-index: 100;
+    pointer-events: auto;
+    z-index: 200;
     cursor: pointer;
-    transition: transform 0.1s ease, background-color 0.1s ease;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    transition: none;
+}
+
+/* The element is deliberately larger than the visible dot for reliable hits. */
+.resize-handle::before {
+    content: '';
+    position: absolute;
+    width: var(--handle-visual-size, 20px);
+    height: var(--handle-visual-size, 20px);
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #ffffff;
+    border: var(--handle-visual-border, 3px) solid var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    box-sizing: border-box;
 }
 
 .resize-handle:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.resize-handle:hover::before {
     background: var(--primary-color);
     border-color: #fff;
 }
@@ -1081,7 +1105,7 @@
     border-radius: 50%;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     pointer-events: all;
-    z-index: 11;
+    z-index: 210;
     cursor: crosshair;
     display: flex;
     align-items: center;
@@ -1089,6 +1113,8 @@
     color: #4caf50;
     font-weight: bold;
     user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
     line-height: 1;
     transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
