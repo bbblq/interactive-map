@@ -362,6 +362,101 @@
     cursor: crosshair;
 }
 
+.editor-map-wrapper.drawing-fill-marker {
+    cursor: crosshair;
+}
+
+.fill-draw-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2147483100;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.fill-draw-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.fill-draw-preview-line {
+    stroke: #4a90e2;
+    stroke-width: 2;
+    stroke-dasharray: 7 5;
+    pointer-events: none;
+}
+
+.fill-draw-vertex {
+    fill: #ffffff;
+    stroke: #4a90e2;
+    stroke-width: 3;
+    cursor: grab;
+    transition: r 0.12s ease, fill 0.12s ease;
+}
+
+.fill-draw-vertex:hover,
+.fill-draw-vertex.can-close {
+    r: 11;
+    fill: #4a90e2;
+}
+
+.fill-draw-vertex.can-close {
+    stroke: #22a06b;
+    fill: #dff8ec;
+}
+
+.fill-draw-toolbar {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(760px, calc(100% - 32px));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 12px 14px;
+    border: 1px solid rgba(74, 144, 226, 0.35);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 30px rgba(22, 34, 51, 0.18);
+    backdrop-filter: blur(8px);
+}
+
+.fill-draw-title {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.fill-draw-status {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.fill-draw-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.fill-draw-actions .btn {
+    padding: 7px 12px;
+    font-size: 13px;
+}
+
+.fill-draw-actions .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .markers-list h3 {
     font-size: 16px;
     margin-bottom: 15px;
@@ -1187,6 +1282,32 @@
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
 }
 
+#editorMarkers .marker-fill {
+    cursor: pointer;
+}
+
+#editorMarkers .marker-fill .fill-svg {
+    pointer-events: none;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+}
+
+.marker-item-icon > svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+@media (max-width: 760px) {
+    .fill-draw-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .fill-draw-actions {
+        justify-content: flex-end;
+    }
+}
+
 /* ========== Icon Type Management ========== */
 .icons-management {
     padding: 20px;
@@ -1369,30 +1490,49 @@
     color: var(--text-primary);
 }
 
-/* �޸�ͼ��ѡ����Ϊ���򲼾� */
+/* 标记类型选择：四张紧凑卡片，避免中文标签被挤成竖排 */
 .marker-type-selector {
-    display: flex;
-    gap: 15px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
 }
 
 .type-option {
-    flex: 1;
+    min-width: 0;
 }
 
 .type-option-content {
-    flex-direction: row !important;
+    min-height: 78px;
+    height: 100%;
+    box-sizing: border-box;
+    flex-direction: column !important;
     justify-content: center;
-    gap: 15px;
-    padding: 15px !important;
+    gap: 6px;
+    padding: 10px 6px !important;
 }
 
 .type-option-icon {
     font-size: 24px;
+    line-height: 1;
     margin-bottom: 0 !important;
 }
 
 .type-option-label {
-    font-size: 15px;
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+    .marker-type-selector {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .type-option-content {
+        min-height: 64px;
+        flex-direction: row !important;
+        padding: 10px 12px !important;
+    }
 }
 
 

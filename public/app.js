@@ -60,10 +60,114 @@ const SVG_ICONS = {
     person: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M5.5 21v-2a7.5 7.5 0 0115 0v2"/></svg>`,
     meeting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>`,
     coffee: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg>`,
+    area: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 18L6 6l11-2 4 8-7 8z"/><path d="M8 15l4-6 5 4"/></svg>`,
     other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
     wifi: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 5.5a10 10 0 0 0 0 13"/><path d="M18.5 5.5a10 10 0 0 1 0 13"/></svg>`,
     camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`
 };
+
+const ARROW_PRESETS = {
+    solid: '0,15 70,15 70,0 100,50 70,100 70,85 0,85',
+    thin: '0,40 70,40 70,15 100,50 70,85 70,60 0,60',
+    double: '0,50 15,15 35,15 35,0 65,0 65,15 85,15 100,50 85,85 65,85 65,100 35,100 35,85 15,85'
+};
+
+function computePolygonBBox(points) {
+    if (!Array.isArray(points) || points.length === 0) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    points.forEach(point => {
+        if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) return;
+        const x = Number(point.x);
+        const y = Number(point.y);
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+    });
+    if (minX === Infinity) return null;
+    return {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+        centerX: (minX + maxX) / 2,
+        centerY: (minY + maxY) / 2
+    };
+}
+
+function sanitizeFillPoints(points) {
+    if (!Array.isArray(points)) return [];
+    return points
+        .map(point => ({ x: Number(point && point.x), y: Number(point && point.y) }))
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function getFillTextLayout(bbox, position) {
+    const parts = String(position || 'center').split('-');
+    const vertical = parts[0] || 'center';
+    const horizontal = parts[1] || 'center';
+    let x = bbox.centerX;
+    let y = bbox.centerY;
+    let textAnchor = 'middle';
+    let dominantBaseline = 'middle';
+
+    if (vertical === 'top') {
+        y = bbox.minY - 6;
+        dominantBaseline = 'auto';
+    } else if (vertical === 'bottom') {
+        y = bbox.maxY + 6;
+        dominantBaseline = 'hanging';
+    }
+    if (horizontal === 'left') {
+        x = bbox.minX;
+        textAnchor = 'start';
+    } else if (horizontal === 'right') {
+        x = bbox.maxX;
+        textAnchor = 'end';
+    }
+    return { x, y, textAnchor, dominantBaseline };
+}
+
+function buildShapeSvg(marker) {
+    const shape = marker.shape || 'rect';
+    const fill = marker.fillColor || '#4a90e2ff';
+    const stroke = marker.strokeColor || '#222222ff';
+    const strokeWidth = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+    if (shape === 'circle') {
+        return `<svg class="shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none"><ellipse cx="50" cy="50" rx="50" ry="50" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" vector-effect="non-scaling-stroke"></ellipse></svg>`;
+    }
+    if (shape === 'arrow') {
+        const points = ARROW_PRESETS[marker.arrowStyle || 'solid'] || ARROW_PRESETS.solid;
+        const anchor = marker.anchor || 'tip';
+        const transform = anchor === 'tip' ? 'translate(-50,0)' : anchor === 'tail' ? 'translate(50,0)' : '';
+        return `<svg class="shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="overflow:visible"><g transform="${transform}"><polygon points="${points}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polygon></g></svg>`;
+    }
+    return `<svg class="shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" vector-effect="non-scaling-stroke"></rect></svg>`;
+}
+
+function buildFillMarkerSvg(marker) {
+    const points = sanitizeFillPoints(marker.points);
+    const bbox = computePolygonBBox(points);
+    if (!bbox || points.length < 3) return '';
+    const pointString = points.map(point => `${point.x.toFixed(3)},${point.y.toFixed(3)}`).join(' ');
+    const fill = marker.fillColor || '#4a90e280';
+    const stroke = marker.strokeColor || '#222222ff';
+    const strokeWidth = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+    const content = marker.textContent || marker.label || '';
+    const fontSize = marker.fontSize || 16;
+    const textColor = marker.textColor || '#222222ff';
+    const layout = getFillTextLayout(bbox, marker.textPosition);
+    const viewBox = `${bbox.minX} ${bbox.minY} ${bbox.width} ${bbox.height}`;
+    const text = content
+        ? `<text x="${layout.x}" y="${layout.y}" text-anchor="${layout.textAnchor}" dominant-baseline="${layout.dominantBaseline}" fill="${textColor}" font-size="${fontSize}" font-weight="600" style="paint-order:stroke;stroke:#fff;stroke-opacity:.85;stroke-width:3px;stroke-linejoin:round;pointer-events:none;user-select:none">${escapeHtml(content)}</text>`
+        : '';
+    return `<svg class="fill-svg" viewBox="${viewBox}" preserveAspectRatio="none" style="overflow:visible"><polygon points="${pointString}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polygon>${text}</svg>`;
+}
 
 let iconTypes = {};
 let currentView = null; // Global view state for Multi-View feature
@@ -365,6 +469,8 @@ function updateMarkerTransforms() {
         const markerScale = marker.scale || 1.0;
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
+        const isShape = marker.type === 'shape';
+        const isFill = marker.type === 'fill';
 
         // 屏幕像素位置
         const screenX = translateX + marker.x * scale;
@@ -372,26 +478,34 @@ function updateMarkerTransforms() {
         markerEl.style.left = screenX + 'px';
         markerEl.style.top = screenY + 'px';
 
-        if (isText) {
+        if (isText || isShape || isFill) {
             // 文字标记: 使用 100% 尺寸，通过 transform scale 整体进行等比缩放
-            if (!marker.width) {
-                markerEl.style.width = 'max-content';
+            if (isFill) {
+                const bbox = computePolygonBBox(sanitizeFillPoints(marker.points));
+                markerEl.style.width = ((bbox ? bbox.width : 100) * markerScale * sizeMul) + 'px';
+                markerEl.style.height = ((bbox ? bbox.height : 100) * markerScale * sizeMul) + 'px';
             } else {
-                const baseW = marker.width;
-                markerEl.style.width = (baseW * sizeMul) + 'px';
+                if (isText && !marker.width) {
+                    markerEl.style.width = 'max-content';
+                } else {
+                    const baseW = marker.width || (48 * markerScale);
+                    markerEl.style.width = (baseW * sizeMul) + 'px';
+                }
+
+                if (isText && !marker.height) {
+                    markerEl.style.height = 'max-content';
+                } else {
+                    const baseH = marker.height || (32 * markerScale);
+                    markerEl.style.height = (baseH * sizeMul) + 'px';
+                }
             }
 
-            if (!marker.height) {
-                markerEl.style.height = 'max-content';
-            } else {
-                const baseH = marker.height;
-                markerEl.style.height = (baseH * sizeMul) + 'px';
-            }
-
-            const label = markerEl.querySelector('.text-label');
-            if (label) {
-                const baseFontPx = (marker.fontSize || 14) * sizeMul;
-                label.style.fontSize = baseFontPx + 'px';
+            if (isText) {
+                const label = markerEl.querySelector('.text-label');
+                if (label) {
+                    const baseFontPx = (marker.fontSize || 14) * sizeMul;
+                    label.style.fontSize = baseFontPx + 'px';
+                }
             }
             markerEl.style.transformOrigin = 'center center';
             markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`;
@@ -464,6 +578,14 @@ function renderMarkers() {
                 (borderColor || borderWidth) ? `border:${borderWidth}px solid ${borderColor || '#cccccc'}` : ''
             ].filter(Boolean).join(';');
             markerEl.innerHTML = `<div class="text-label" style="${colorStyle}">${content}</div>`;
+        } else if (marker.type === 'shape') {
+            const shapeCat = marker.category || 'other';
+            markerEl.className = `marker marker-shape ${shapeCat}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(shapeCat) ? ' category-hidden' : ''}`;
+            markerEl.innerHTML = buildShapeSvg(marker);
+        } else if (marker.type === 'fill') {
+            const fillCat = marker.category || 'other';
+            markerEl.className = `marker marker-fill ${fillCat}${!showMarkers ? ' hidden' : ''}${hiddenCategories.has(fillCat) ? ' category-hidden' : ''}`;
+            markerEl.innerHTML = buildFillMarkerSvg(marker);
         } else {
             // 图标标记
             const iconCat = marker.category || 'other';
@@ -1479,6 +1601,76 @@ async function drawShapeMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     }
 }
 
+async function drawFillMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
+    const points = sanitizeFillPoints(marker.points);
+    const bbox = computePolygonBBox(points);
+    if (!bbox || points.length < 3) return;
+
+    const markerScale = marker.scale || 1.0;
+    const factor = markerScale * sizeMul;
+    const scaledPoints = points.map(point => ({
+        x: mx + point.x * factor,
+        y: my + point.y * factor
+    }));
+    const firstPoint = scaledPoints[0];
+    const vectors = [];
+    for (let index = 1; index < scaledPoints.length; index++) {
+        vectors.push([
+            scaledPoints[index].x - scaledPoints[index - 1].x,
+            scaledPoints[index].y - scaledPoints[index - 1].y
+        ]);
+    }
+
+    const rotation = marker.rotation || 0;
+    if (rotation !== 0) {
+        doc.saveGraphicsState();
+        const radians = rotation * Math.PI / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+        const pdfCenterY = pdfH - my;
+        const matrix = doc.Matrix(
+            cos,
+            -sin,
+            sin,
+            cos,
+            mx - mx * cos - pdfCenterY * sin,
+            pdfCenterY + mx * sin - pdfCenterY * cos
+        );
+        doc.setCurrentTransformationMatrix(matrix);
+    }
+
+    const fillColor = marker.fillColor || '#4a90e280';
+    if (fillColor !== 'transparent') {
+        applyPdfColor(doc, fillColor, 'fill');
+        doc.lines(vectors, firstPoint.x, firstPoint.y, [1, 1], 'F', true);
+        doc.setGState(new doc.GState({ opacity: 1 }));
+    }
+
+    const strokeColor = marker.strokeColor || '#222222ff';
+    const strokeWidth = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+    if (strokeColor !== 'transparent' && strokeWidth > 0) {
+        applyPdfColor(doc, strokeColor, 'draw');
+        doc.setLineWidth(Math.max(0.25, strokeWidth * sizeMul));
+        doc.setLineJoin('round');
+        doc.lines(vectors, firstPoint.x, firstPoint.y, [1, 1], 'S', true);
+        doc.setGState(new doc.GState({ opacity: 1 }));
+    }
+
+    const content = marker.textContent || marker.label || '';
+    if (content) {
+        const layout = getFillTextLayout(bbox, marker.textPosition);
+        const align = layout.textAnchor === 'start' ? 'left' : layout.textAnchor === 'end' ? 'right' : 'center';
+        const baseline = layout.dominantBaseline === 'hanging' ? 'top' : layout.dominantBaseline === 'auto' ? 'bottom' : 'middle';
+        ensurePdfFont(doc);
+        doc.setFontSize(Math.max(6, (marker.fontSize || 16) * factor));
+        applyPdfColor(doc, marker.textColor || '#222222ff', 'text');
+        doc.text(content, mx + layout.x * factor, my + layout.y * factor, { align, baseline });
+        doc.setGState(new doc.GState({ opacity: 1 }));
+    }
+
+    if (rotation !== 0) doc.restoreGraphicsState();
+}
+
 async function exportAsPdf(range) {
     if (!mapImg.naturalWidth) throw new Error('地图未加载');
     if (!window.jspdf) throw new Error('jsPDF 库未加载, 请检查网络连接');
@@ -1539,6 +1731,7 @@ async function exportAsPdf(range) {
         try {
             if (marker.type === 'text') await drawTextMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
             else if (marker.type === 'shape') await drawShapeMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
+            else if (marker.type === 'fill') await drawFillMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
             else await drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH);
             drawn++;
             if (drawn % 10 === 0) {

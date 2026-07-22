@@ -117,6 +117,12 @@ function migrateFromJson(config) {
 function initialize(config) {
   initSchema();
   migrateFromJson(config);
+  getDb().prepare(`
+    UPDATE markers
+    SET category = 'area'
+    WHERE type = 'fill'
+      AND (category IS NULL OR category = '' OR category = 'other')
+  `).run();
 }
 
 // ─── Markers CRUD ─────────────────────────────────────────────────────────────
@@ -264,7 +270,8 @@ const DEFAULT_ICON_TYPES = {
   meeting:  { name: '会议室',  icon: 'meeting',  color: '#ff6b6b', showInSidebar: true, order: 12 },
   wifi:     { name: '无线 AP', icon: 'wifi',     color: '#3f51b5', showInSidebar: true, order: 13 },
   camera:   { name: '摄像头',  icon: 'camera',   color: '#607d8b', showInSidebar: true, order: 14 },
-  other:    { name: '其他',    icon: 'other',    color: '#9e9e9e', showInSidebar: true, order: 15 }
+  area:     { name: '区域标记', icon: 'area',     color: '#4a90e2', showInSidebar: true, order: 15 },
+  other:    { name: '其他',    icon: 'other',    color: '#9e9e9e', showInSidebar: true, order: 16 }
 };
 
 const DEFAULT_CATEGORIES = {
@@ -272,6 +279,7 @@ const DEFAULT_CATEGORIES = {
   printer: { name: '打印机', icon: '🖨️', color: '#7b68ee' },
   water:   { name: '饮水机', icon: '💧', color: '#00bcd4' },
   meeting: { name: '会议室', icon: '🏢', color: '#ff6b6b' },
+  area:    { name: '区域标记', icon: '⬟', color: '#4a90e2' },
   other:   { name: '其他',   icon: '📌', color: '#ffa726' }
 };
 
@@ -279,9 +287,9 @@ function getMap()         { return getKV('map', { imageUrl: '' }); }
 function setMap(v)        { setKV('map', v); }
 function getSettings()    { return Object.assign({}, DEFAULT_SETTINGS, getKV('settings', {}) || {}); }
 function setSettings(v)   { setKV('settings', v); }
-function getCategories()  { return getKV('categories', DEFAULT_CATEGORIES); }
+function getCategories()  { return Object.assign({}, DEFAULT_CATEGORIES, getKV('categories', {}) || {}); }
 function setCategories(v) { setKV('categories', v); }
-function getIconTypes()   { return getKV('iconTypes', DEFAULT_ICON_TYPES); }
+function getIconTypes()   { return Object.assign({}, DEFAULT_ICON_TYPES, getKV('iconTypes', {}) || {}); }
 function setIconTypes(v)  { setKV('iconTypes', v); }
 function getViews()       { return getKV('views', []); }
 function setViews(v)      { setKV('views', v); }

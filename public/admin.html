@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 互动地图</title>
-    <link rel="stylesheet" href="style.css?v=1.6.4">
-    <link rel="stylesheet" href="admin.css?v=1.6.6.14">
+    <link rel="stylesheet" href="style.css?v=1.6.7.2">
+    <link rel="stylesheet" href="admin.css?v=1.6.7.2">
     <link rel="stylesheet" href="rich-text-editor.css?v=1.6.4">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -442,6 +442,13 @@
                                     <span class="type-option-label">形状标记</span>
                                 </span>
                             </label>
+                            <label class="type-option">
+                                <input type="radio" name="markerType" value="fill">
+                                <span class="type-option-content">
+                                    <span class="type-option-icon">🖌️</span>
+                                    <span class="type-option-label">填色标记</span>
+                                </span>
+                            </label>
                         </div>
                     </div>
 
@@ -700,19 +707,93 @@
 
                         <div class="form-group">
                             <label>描述 (可选)</label>
-                            <textarea id="markerDescription" rows="2" placeholder="纯文本描述 (区别于下面的富文本详情)"></textarea>
+                            <textarea id="shapeDescription" rows="2" placeholder="简短文本描述"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Fill marker settings -->
+                    <div id="fillMarkerSettings" class="marker-settings" style="display: none;">
+                        <input type="hidden" id="fillMarkerPoints">
+
+                        <div class="form-group" style="background: rgba(74,144,226,0.08); padding: 10px 12px; border-radius: 6px; border-left: 3px solid var(--primary-color, #4a90e2);">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="color: var(--primary-color, #4a90e2); font-weight: 600;">🖌️ 填色标记</span>
+                                <button type="button" class="btn btn-secondary" id="redrawFillPolygonBtn" style="margin-left: auto; padding: 6px 12px; font-size: 13px;">绘制 / 编辑顶点</button>
+                            </div>
+                            <div id="fillMarkerPointsInfo" style="margin-top: 6px; font-size: 12px; color: #666;">尚无多边形数据</div>
                         </div>
 
                         <div class="form-group">
-                            <label>详情 (可选, 富文本)</label>
-                            <div class="rich-editor-toolbar">
-                                <button type="button" onclick="document.execCommand('bold')" title="加粗"><b>B</b></button>
-                                <button type="button" onclick="document.execCommand('italic')" title="斜体"><i>I</i></button>
-                                <button type="button" onclick="document.execCommand('underline')" title="下划线"><u>U</u></button>
-                                <button type="button" onclick="insertLink()" title="插入链接">🔗</button>
-                            </div>
-                            <div id="textDetails" class="rich-editor" contenteditable="true" style="min-height: 60px;"></div>
+                            <label>文字内容</label>
+                            <input type="text" id="fillTextContent" placeholder="例如：销售部">
                         </div>
+
+                        <div class="form-group">
+                            <label>文字位置</label>
+                            <select id="fillTextPosition">
+                                <option value="top-left">↖ 左上 (多边形外)</option>
+                                <option value="top-center">↑ 上中 (多边形外)</option>
+                                <option value="top-right">↗ 右上 (多边形外)</option>
+                                <option value="center-left">← 左中 (内)</option>
+                                <option value="center" selected>○ 居中 (内)</option>
+                                <option value="center-right">→ 右中 (内)</option>
+                                <option value="bottom-left">↙ 左下 (多边形外)</option>
+                                <option value="bottom-center">↓ 下中 (多边形外)</option>
+                                <option value="bottom-right">↘ 右下 (多边形外)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>字体大小</label>
+                                <input type="number" id="fillFontSize" value="16" min="8" max="64" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label>文字颜色</label>
+                                <input type="color" id="fillTextColor" value="#222222" class="color-swatch">
+                            </div>
+                            <div class="form-group">
+                                <label>文字透明度 <span id="fillTextColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="fillTextColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>填充颜色</label>
+                                <input type="color" id="fillMarkerFillColor" value="#4a90e2" class="color-swatch">
+                            </div>
+                            <div class="form-group">
+                                <label>填充透明度 <span id="fillMarkerFillColorAlphaLabel">50</span>%</label>
+                                <input type="range" id="fillMarkerFillColorAlpha" min="0" max="100" value="50" step="1" class="color-alpha">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>边框颜色</label>
+                                <input type="color" id="fillMarkerStrokeColor" value="#222222" class="color-swatch">
+                            </div>
+                            <div class="form-group">
+                                <label>边框透明度 <span id="fillMarkerStrokeColorAlphaLabel">100</span>%</label>
+                                <input type="range" id="fillMarkerStrokeColorAlpha" min="0" max="100" value="100" step="1" class="color-alpha">
+                            </div>
+                            <div class="form-group">
+                                <label>边框宽度 (源图像素)</label>
+                                <input type="number" id="fillMarkerStrokeWidth" value="2" min="0" max="50" step="0.5">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>名称 (可选, 显示在侧边栏列表)</label>
+                            <input type="text" id="fillLabel" placeholder="例如：销售区">
+                        </div>
+
+                        <div class="form-group">
+                            <label>描述 (可选)</label>
+                            <textarea id="fillDescription" rows="2" placeholder="简短文本描述 (区别于下面的富文本详情)"></textarea>
+                        </div>
+
                     </div>
 
                     <!-- Hidden field for marker scale -->
@@ -871,6 +952,10 @@
             <span class="context-menu-icon">▭</span>
             <span class="context-menu-label">添加形状标记</span>
         </div>
+        <div class="context-menu-item" data-action="add-fill">
+            <span class="context-menu-icon">🖌️</span>
+            <span class="context-menu-label">绘制填色标记</span>
+        </div>
     </div>
 
     <!-- View Form Modal -->
@@ -907,7 +992,7 @@
         </div>
     </div>
 
-    <script src="admin.js?v=1.6.6.14"></script>
+    <script src="admin.js?v=1.6.7.2"></script>
 </body>
 
 </html>

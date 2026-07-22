@@ -256,8 +256,19 @@ const validateMarker = [
   body('x').isNumeric().withMessage('X coordinate must be a number'),
   body('y').isNumeric().withMessage('Y coordinate must be a number'),
   body('label').optional({ values: 'null' }).isString().trim().isLength({ max: 100 }),
-  body('type').optional().isIn(['icon', 'text', 'shape']),
+  body('type').optional().isIn(['icon', 'text', 'shape', 'fill']),
   body('category').optional({ values: 'null' }).isString().trim().isLength({ max: 50 }),
+  body('points').custom((points, { req }) => {
+    if (req.body.type !== 'fill') return true;
+    if (!Array.isArray(points) || points.length < 3 || points.length > 500) {
+      throw new Error('Fill marker must contain 3 to 500 points');
+    }
+    const valid = points.every(point => point
+      && Number.isFinite(Number(point.x))
+      && Number.isFinite(Number(point.y)));
+    if (!valid) throw new Error('Fill marker points must be numeric coordinates');
+    return true;
+  }),
   (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

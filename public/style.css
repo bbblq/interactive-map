@@ -763,6 +763,20 @@ body {
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
 }
 
+.marker-fill {
+  cursor: pointer;
+}
+
+.marker-fill .fill-svg {
+  pointer-events: none;
+  overflow: visible;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+}
+
+.marker-fill:hover .fill-svg {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
 .marker-text-only .text-label {
   background: rgba(255, 255, 255, 0.95);
   color: var(--text-primary);
@@ -1335,4 +1349,7 @@ sidebar:not(.expanded) .category-left {
   filter: none !important;
 }
 
+.is-exporting .fill-svg {
+  filter: none !important;
+}
 

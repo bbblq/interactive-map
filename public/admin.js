@@ -78,6 +78,7 @@ let selectedMarkerId = null;
 let selectionBox = null;
 let isResizing = false;
 let resizeHandle = null;
+let fillDrawState = null;
 
 // [perf] rAF coalescing: collapse multiple mousemove events into one paint per frame
 let moveRafId = 0;
@@ -235,6 +236,7 @@ const SVG_ICONS = {
     person: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M5.5 21v-2a7.5 7.5 0 0115 0v2"/></svg>`,
     meeting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>`,
     coffee: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg>`,
+    area: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 18L6 6l11-2 4 8-7 8z"/><path d="M8 15l4-6 5 4"/></svg>`,
     other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
     // 无线 AP: 中心点 + 左右 2 道信号弧 (经典 AP 图标)
     wifi: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 5.5a10 10 0 0 0 0 13"/><path d="M18.5 5.5a10 10 0 0 1 0 13"/></svg>`,
@@ -245,6 +247,94 @@ const SVG_ICONS = {
 // 形状标记: 生成 SVG 几何形状 (rect / circle / arrow)
 // 跟 app.js buildShapeSvg 保持一致, 字段: shape, fillColor, strokeColor, strokeWidth
 // 箭头额外字段: arrowStyle, anchor
+function computePolygonBBox(points) {
+    if (!Array.isArray(points) || points.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const point of points) {
+        if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) continue;
+        const x = Number(point.x);
+        const y = Number(point.y);
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+    }
+    if (minX === Infinity) return null;
+    return {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+        centerX: (minX + maxX) / 2,
+        centerY: (minY + maxY) / 2
+    };
+}
+
+function sanitizeFillPoints(points) {
+    if (!Array.isArray(points)) return [];
+    return points
+        .map(point => ({ x: Number(point && point.x), y: Number(point && point.y) }))
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function getFillTextLayout(bbox, position, fontSize) {
+    const parts = String(position || 'center').split('-');
+    const vertical = parts[0] || 'center';
+    const horizontal = parts[1] || 'center';
+    let x = bbox.centerX;
+    let y = bbox.centerY;
+    let textAnchor = 'middle';
+    let dominantBaseline = 'middle';
+
+    if (vertical === 'top') {
+        y = bbox.minY - 6;
+        dominantBaseline = 'auto';
+    } else if (vertical === 'bottom') {
+        y = bbox.maxY + 6;
+        dominantBaseline = 'hanging';
+    }
+
+    if (horizontal === 'left') {
+        x = bbox.minX;
+        textAnchor = 'start';
+    } else if (horizontal === 'right') {
+        x = bbox.maxX;
+        textAnchor = 'end';
+    }
+
+    return { x, y, textAnchor, dominantBaseline, fontSize };
+}
+
+function buildEditorFillSvg(marker) {
+    const points = sanitizeFillPoints(marker.points);
+    if (points.length < 3) return '';
+    const bbox = computePolygonBBox(points);
+    if (!bbox) return '';
+
+    const polyPoints = points.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(' ');
+    const fillColor = marker.fillColor || '#4a90e280';
+    const strokeColor = marker.strokeColor || '#222222ff';
+    const strokeWidth = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+    const textContent = marker.textContent || marker.label || '';
+    const fontSize = marker.fontSize || 16;
+    const textColor = marker.textColor || '#222222ff';
+    const textLayout = getFillTextLayout(bbox, marker.textPosition, fontSize);
+    const vb = bbox.minX + ' ' + bbox.minY + ' ' + bbox.width + ' ' + bbox.height;
+    const escText = escapeHtml(textContent);
+    return '<svg class="fill-svg" viewBox="' + vb + '" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;">' +
+        '<polygon points="' + polyPoints + '"' +
+        ' fill="' + fillColor + '"' +
+        ' stroke="' + strokeColor + '" stroke-width="' + strokeWidth + '"' +
+        ' vector-effect="non-scaling-stroke" stroke-linejoin="round" />' +
+        (textContent ? ('<text x="' + textLayout.x + '" y="' + textLayout.y + '"' +
+            ' text-anchor="' + textLayout.textAnchor + '"' +
+            ' dominant-baseline="' + textLayout.dominantBaseline + '"' +
+            ' fill="' + textColor + '" font-size="' + fontSize + '" font-weight="600"' +
+            ' style="user-select:none;paint-order:stroke;stroke:#fff;stroke-opacity:.85;stroke-width:3px;stroke-linejoin:round;pointer-events:none;">' + escText + '</text>') : '') +
+        '</svg>';
+}
 // vector-effect="non-scaling-stroke" 让描边宽度不被等比缩放撑大
 const ARROW_PRESETS_EDITOR = {
     solid: '0,15 70,15 70,0 100,50 70,100 70,85 0,85',
@@ -295,6 +385,7 @@ const DEFAULT_ICON_TYPES = {
     snacks: { name: '零食台', icon: 'snacks', color: '#ffa726' },
     person: { name: '人员', icon: 'person', color: '#4a90e2' },
     meeting: { name: '会议室', icon: 'meeting', color: '#ff6b6b' },
+    area: { name: '区域标记', icon: 'area', color: '#4a90e2', showInSidebar: true, order: 15 },
     other: { name: '其他', icon: 'other', color: '#9e9e9e' }
 };
 
@@ -757,6 +848,10 @@ function setupAdminListeners() {
         try { const sel = window.getSelection && window.getSelection(); if (sel && sel.rangeCount > 0) sel.removeAllRanges(); } catch (_) {}
     }, true);
     editorMapWrapper.addEventListener('wheel', (e) => {
+        if (fillDrawState) {
+            e.preventDefault();
+            return;
+        }
         // [优化] 拖动/缩放/旋转期间禁止滚轮缩放, 避免“拖着拖着就被放大几倍”
         if (inputLockZoom || isDraggingMarker || isResizing || isRotating || pendingDrag) return;
         e.preventDefault();
@@ -777,6 +872,12 @@ function setupAdminListeners() {
     setupColorPicker('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel');
     setupColorPicker('fillColor', 'fillColorAlpha', 'fillColorAlphaLabel');
     setupColorPicker('strokeColor', 'strokeColorAlpha', 'strokeColorAlphaLabel');
+    setupColorPicker('fillTextColor', 'fillTextColorAlpha', 'fillTextColorAlphaLabel');
+    setupColorPicker('fillMarkerFillColor', 'fillMarkerFillColorAlpha', 'fillMarkerFillColorAlphaLabel');
+    setupColorPicker('fillMarkerStrokeColor', 'fillMarkerStrokeColorAlpha', 'fillMarkerStrokeColorAlphaLabel');
+
+    const redrawFillPolygonBtn = document.getElementById('redrawFillPolygonBtn');
+    if (redrawFillPolygonBtn) redrawFillPolygonBtn.addEventListener('click', editFillPolygonFromForm);
 
     // 形状类型切换: 箭头时显示箭头专属设置
     const shapeTypeEl = document.getElementById('shapeType');
@@ -1125,6 +1226,18 @@ function updateEditorTransform() {
 const EDITOR_MARKER_BASE = 32;
 const EDITOR_MARKER_FONT = 13;
 
+function applyFillMarkerSize(marker, markerEl, sizeMul) {
+    const markerScale = marker.scale || 1.0;
+    let bbox = markerEl.__fillBbox;
+    if (!bbox || markerEl.__fillPointsRef !== marker.points) {
+        bbox = computePolygonBBox(sanitizeFillPoints(marker.points));
+        markerEl.__fillBbox = bbox;
+        markerEl.__fillPointsRef = marker.points;
+    }
+    markerEl.style.width = ((bbox ? bbox.width : 100) * markerScale * sizeMul) + 'px';
+    markerEl.style.height = ((bbox ? bbox.height : 100) * markerScale * sizeMul) + 'px';
+}
+
 function updateEditorMarkerScales() {
     if (!editorMapImg.naturalWidth) return;
     const sizeMul = globalMarkerSizeMultiplier || 1.0;
@@ -1140,6 +1253,7 @@ function updateEditorMarkerScales() {
         const rotation = marker.rotation || 0;
         const isText = marker.type === 'text';
         const isShape = marker.type === 'shape';
+        const isFill = marker.type === 'fill';
 
         // 屏幕像素位置
         const screenX = editorTranslateX + marker.x * editorScale;
@@ -1147,20 +1261,24 @@ function updateEditorMarkerScales() {
         markerEl.style.left = screenX + 'px';
         markerEl.style.top = screenY + 'px';
 
-        if (isText || isShape) {
+        if (isText || isShape || isFill) {
             // 文字 / 形状标记: 自由尺寸, 不再在此处乘以缩放系数，改用 transform scale 缩放
-            if (isText && !marker.width) {
-                markerEl.style.width = 'max-content';
+            if (isFill) {
+                applyFillMarkerSize(marker, markerEl, sizeMul);
             } else {
-                const baseW = marker.width || (48 * markerScale);
-                markerEl.style.width = (baseW * sizeMul) + 'px';
-            }
+                if (isText && !marker.width) {
+                    markerEl.style.width = 'max-content';
+                } else {
+                    const baseW = marker.width || (48 * markerScale);
+                    markerEl.style.width = (baseW * sizeMul) + 'px';
+                }
 
-            if (isText && !marker.height) {
-                markerEl.style.height = 'max-content';
-            } else {
-                const baseH = marker.height || (32 * markerScale);
-                markerEl.style.height = (baseH * sizeMul) + 'px';
+                if (isText && !marker.height) {
+                    markerEl.style.height = 'max-content';
+                } else {
+                    const baseH = marker.height || (32 * markerScale);
+                    markerEl.style.height = (baseH * sizeMul) + 'px';
+                }
             }
 
             if (isText) {
@@ -1198,6 +1316,7 @@ function updateEditorMarkerScales() {
             markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;
         }
     }
+    if (fillDrawState) renderFillDrawOverlay();
 }
 
 // 保留旧函数名以兼容其他调用
@@ -1290,7 +1409,7 @@ window.focusAdminMarker = focusAdminMarker;
 
 // Editor drag
 function startEditorDrag(e) {
-    if (isAddingMarker) return;
+    if (isAddingMarker || fillDrawState) return;
     isDragging = true;
     startX = e.clientX - editorTranslateX;
     startY = e.clientY - editorTranslateY;
@@ -1504,6 +1623,9 @@ function buildMarkerInnerHTML(marker) {
     if (markerType === 'shape') {
         return buildEditorShapeSvg(marker);
     }
+    if (markerType === 'fill') {
+        return buildEditorFillSvg(marker);
+    }
     // icon marker
     const showIcon = marker.showIcon !== false;
     const showLabel = marker.showLabel !== false;
@@ -1577,6 +1699,8 @@ function renderEditorMarkers() {
             markerEl.className = 'marker marker-text-only';
         } else if (markerType === 'shape') {
             markerEl.className = 'marker marker-shape';
+        } else if (markerType === 'fill') {
+            markerEl.className = 'marker marker-fill';
         } else {
             markerEl.className = `marker ${marker.category || 'other'}`;
         }
@@ -1625,7 +1749,17 @@ function getMarkerDisplayName(marker) {
     const shapeNames = { rect: '矩形', circle: '圆形', arrow: '箭头' };
     if (marker.type === 'text') return marker.content || marker.label || '(未命名文字)';
     if (marker.type === 'shape') return marker.label || `(${shapeNames[marker.shape] || '形状'})`;
+    if (marker.type === 'fill') return marker.label || marker.textContent || '(未命名填色区域)';
     return marker.label || '(未命名)';
+}
+
+function getMarkerListIcon(marker) {
+    if (marker.type === 'fill') {
+        const fill = marker.fillColor || '#4a90e280';
+        const stroke = marker.strokeColor || '#222222ff';
+        return `<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="3,18 6,5 17,3 22,11 15,21" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"></polygon></svg>`;
+    }
+    return getMarkerIcon(marker.category);
 }
 
 // Render markers list — grouped by category with collapse/expand and visibility
@@ -1717,7 +1851,7 @@ function renderMarkersList() {
                      onkeydown="handleMarkerListKeydown(event, '${marker.id}')">
                   <div class="marker-item-header">
                     <div class="marker-item-title">
-                      <span class="marker-item-icon">${getMarkerIcon(marker.category)}</span>
+                      <span class="marker-item-icon">${getMarkerListIcon(marker)}</span>
                       <span class="marker-item-name">${escapeHtml(displayName)}</span>
                       ${markerLocked ? '<span class="marker-locked-badge" title="已锁定（防误触）">🔒</span>' : ''}
                     </div>
@@ -1918,6 +2052,410 @@ function getColorPickerValue(colorId, alphaId) {
     return combineHexAlpha(colorEl.value, parseInt(alphaEl.value, 10));
 }
 
+function setFillPointsField(points) {
+    const safePoints = sanitizeFillPoints(points);
+    const pointsField = document.getElementById('fillMarkerPoints');
+    const pointsInfo = document.getElementById('fillMarkerPointsInfo');
+    if (pointsField) pointsField.value = safePoints.length ? JSON.stringify(safePoints) : '';
+    if (pointsInfo) {
+        pointsInfo.textContent = safePoints.length >= 3
+            ? `多边形：${safePoints.length} 个顶点，可编辑或重绘`
+            : '尚未绘制多边形，请点击“绘制多边形”';
+    }
+}
+
+function getFillPointsField() {
+    const pointsField = document.getElementById('fillMarkerPoints');
+    if (!pointsField || !pointsField.value) return [];
+    try {
+        return sanitizeFillPoints(JSON.parse(pointsField.value));
+    } catch (_) {
+        return [];
+    }
+}
+
+function rotateFillPoint(point, rotation) {
+    const radians = rotation * Math.PI / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    return {
+        x: point.x * cos - point.y * sin,
+        y: point.x * sin + point.y * cos
+    };
+}
+
+function fillLocalPointsToWorld(points, x, y, scale, rotation) {
+    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    return sanitizeFillPoints(points).map(point => {
+        const rotated = rotateFillPoint({ x: point.x * safeScale, y: point.y * safeScale }, rotation || 0);
+        return { x: x + rotated.x, y: y + rotated.y };
+    });
+}
+
+function normalizeFillWorldPoints(worldPoints, x = 0, y = 0, scale = 1, rotation = 0) {
+    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    const radians = (rotation || 0) * Math.PI / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const localPoints = sanitizeFillPoints(worldPoints).map(point => {
+        const dx = point.x - x;
+        const dy = point.y - y;
+        return {
+            x: (dx * cos + dy * sin) / safeScale,
+            y: (-dx * sin + dy * cos) / safeScale
+        };
+    });
+    const bbox = computePolygonBBox(localPoints);
+    if (!bbox) return null;
+
+    const centerOffset = rotateFillPoint({
+        x: bbox.centerX * safeScale,
+        y: bbox.centerY * safeScale
+    }, rotation || 0);
+
+    return {
+        x: x + centerOffset.x,
+        y: y + centerOffset.y,
+        points: localPoints.map(point => ({
+            x: Number((point.x - bbox.centerX).toFixed(3)),
+            y: Number((point.y - bbox.centerY).toFixed(3))
+        }))
+    };
+}
+
+function fillWorldPointToScreen(point) {
+    return {
+        x: editorTranslateX + point.x * editorScale,
+        y: editorTranslateY + point.y * editorScale
+    };
+}
+
+function fillEventToWorldPoint(event) {
+    const rect = editorMapWrapper.getBoundingClientRect();
+    const point = {
+        x: (event.clientX - rect.left - editorTranslateX) / editorScale,
+        y: (event.clientY - rect.top - editorTranslateY) / editorScale
+    };
+    if (!editorMapImg.naturalWidth || !editorMapImg.naturalHeight) return null;
+    if (point.x < 0 || point.y < 0 || point.x > editorMapImg.naturalWidth || point.y > editorMapImg.naturalHeight) return null;
+    return point;
+}
+
+function renderFillDrawOverlay() {
+    const state = fillDrawState;
+    if (!state || !state.svg) return;
+    const width = editorMapWrapper.clientWidth;
+    const height = editorMapWrapper.clientHeight;
+    state.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const screenPoints = state.points.map(fillWorldPointToScreen);
+    const pointString = screenPoints.map(point => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
+    const fillColor = getColorPickerValue('fillMarkerFillColor', 'fillMarkerFillColorAlpha') || '#4a90e280';
+    const strokeColor = getColorPickerValue('fillMarkerStrokeColor', 'fillMarkerStrokeColorAlpha') || '#222222ff';
+    const shape = state.closed
+        ? `<polygon points="${pointString}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="2.5" stroke-linejoin="round"></polygon>`
+        : `<polyline points="${pointString}" fill="${screenPoints.length >= 3 ? fillColor : 'none'}" stroke="${strokeColor}" stroke-width="2.5" stroke-linejoin="round"></polyline>`;
+    const preview = !state.closed && state.previewPoint && screenPoints.length
+        ? (() => {
+            const lastPoint = screenPoints[screenPoints.length - 1];
+            const nextPoint = fillWorldPointToScreen(state.previewPoint);
+            return `<line x1="${lastPoint.x}" y1="${lastPoint.y}" x2="${nextPoint.x}" y2="${nextPoint.y}" class="fill-draw-preview-line"></line>`;
+        })()
+        : '';
+    const vertices = screenPoints.map((point, index) => {
+        const canClose = !state.closed && index === 0 && state.points.length >= 3;
+        return `<circle class="fill-draw-vertex${canClose ? ' can-close' : ''}" data-index="${index}" cx="${point.x}" cy="${point.y}" r="9"></circle>`;
+    }).join('');
+
+    state.svg.innerHTML = shape + preview + vertices;
+    state.finishButton.disabled = !state.closed || state.points.length < 3;
+    state.status.textContent = state.closed
+        ? `已闭合，共 ${state.points.length} 个顶点。拖动圆点调整，右键圆点删除。`
+        : `已添加 ${state.points.length} 个顶点。点击起点、双击或按 Enter 闭合，Ctrl+Z 删除上一个点。`;
+}
+
+function exitFillMarkerDrawMode() {
+    if (!fillDrawState) return;
+    document.removeEventListener('keydown', handleFillDrawKeydown, true);
+    if (fillDrawState.overlay) fillDrawState.overlay.remove();
+    fillDrawState = null;
+    editorMapWrapper.classList.remove('drawing-fill-marker');
+}
+
+function finishFillMarkerDrawMode() {
+    const state = fillDrawState;
+    if (!state || !state.closed || state.points.length < 3) {
+        showToast('至少需要 3 个顶点并闭合多边形', 'error');
+        return;
+    }
+    const points = state.points.map(point => ({ ...point }));
+    const onComplete = state.onComplete;
+    exitFillMarkerDrawMode();
+    if (onComplete) onComplete(points);
+}
+
+function cancelFillMarkerDrawMode() {
+    const state = fillDrawState;
+    if (!state) return;
+    const onCancel = state.onCancel;
+    exitFillMarkerDrawMode();
+    if (onCancel) onCancel();
+}
+
+function closeFillDrawPolygon() {
+    const state = fillDrawState;
+    if (!state || state.points.length < 3) {
+        showToast('至少需要 3 个顶点才能闭合', 'error');
+        return;
+    }
+    state.closed = true;
+    state.previewPoint = null;
+    renderFillDrawOverlay();
+    if (state.autoFinishOnClose) setTimeout(finishFillMarkerDrawMode, 0);
+}
+
+function restartFillDrawPolygon() {
+    if (!fillDrawState) return;
+    fillDrawState.points = [];
+    fillDrawState.closed = false;
+    fillDrawState.previewPoint = null;
+    fillDrawState.autoFinishOnClose = true;
+    renderFillDrawOverlay();
+}
+
+function handleFillDrawClick(event) {
+    const state = fillDrawState;
+    if (!state) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (state.suppressClick) {
+        state.suppressClick = false;
+        return;
+    }
+
+    const vertex = event.target.closest && event.target.closest('.fill-draw-vertex');
+    if (vertex) {
+        const index = Number(vertex.dataset.index);
+        if (!state.closed && index === 0 && state.points.length >= 3) closeFillDrawPolygon();
+        return;
+    }
+    if (state.closed) return;
+    if (event.detail >= 2) {
+        closeFillDrawPolygon();
+        return;
+    }
+
+    const point = fillEventToWorldPoint(event);
+    if (!point) {
+        showToast('请在地图图片范围内添加顶点', 'info');
+        return;
+    }
+    state.points.push(point);
+    state.previewPoint = point;
+    renderFillDrawOverlay();
+}
+
+function handleFillDrawPointerDown(event) {
+    const state = fillDrawState;
+    if (!state) return;
+    event.stopPropagation();
+    const vertex = event.target.closest && event.target.closest('.fill-draw-vertex');
+    if (!vertex || event.button !== 0 || !state.closed) return;
+    event.preventDefault();
+    state.dragIndex = Number(vertex.dataset.index);
+    state.dragStartClientX = event.clientX;
+    state.dragStartClientY = event.clientY;
+    state.dragMoved = false;
+    state.svg.setPointerCapture(event.pointerId);
+}
+
+function handleFillDrawPointerMove(event) {
+    const state = fillDrawState;
+    if (!state) return;
+    const point = fillEventToWorldPoint(event);
+    if (state.dragIndex != null) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!point) return;
+        if (Math.abs(event.clientX - state.dragStartClientX) > 2 || Math.abs(event.clientY - state.dragStartClientY) > 2) {
+            state.dragMoved = true;
+        }
+        state.points[state.dragIndex] = point;
+        renderFillDrawOverlay();
+        return;
+    }
+    if (!state.closed) {
+        state.previewPoint = point;
+        renderFillDrawOverlay();
+    }
+}
+
+function handleFillDrawPointerUp(event) {
+    const state = fillDrawState;
+    if (!state || state.dragIndex == null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (state.svg.hasPointerCapture(event.pointerId)) state.svg.releasePointerCapture(event.pointerId);
+    state.suppressClick = state.dragMoved;
+    state.dragIndex = null;
+    state.dragMoved = false;
+    renderFillDrawOverlay();
+}
+
+function handleFillDrawContextMenu(event) {
+    const state = fillDrawState;
+    if (!state) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const vertex = event.target.closest && event.target.closest('.fill-draw-vertex');
+    if (!vertex) return;
+    if (state.points.length <= 3) {
+        showToast('多边形至少保留 3 个顶点', 'info');
+        return;
+    }
+    state.points.splice(Number(vertex.dataset.index), 1);
+    renderFillDrawOverlay();
+}
+
+function handleFillDrawKeydown(event) {
+    const state = fillDrawState;
+    if (!state) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        cancelFillMarkerDrawMode();
+    } else if (event.key === 'Enter' && !state.closed) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeFillDrawPolygon();
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (state.closed) state.closed = false;
+        state.points.pop();
+        state.previewPoint = state.points[state.points.length - 1] || null;
+        renderFillDrawOverlay();
+    }
+}
+
+function enterFillMarkerDrawMode(options = {}) {
+    if (!editorMapImg.naturalWidth) {
+        showToast('请先上传并加载地图', 'error');
+        return;
+    }
+    exitFillMarkerDrawMode();
+    deselectMarker();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'fill-draw-overlay';
+    overlay.innerHTML = `
+        <svg class="fill-draw-canvas" aria-label="填色标记多边形绘制区域"></svg>
+        <div class="fill-draw-toolbar">
+            <div class="fill-draw-title"><strong>🖌️ 绘制填色标记</strong><span class="fill-draw-status"></span></div>
+            <div class="fill-draw-actions">
+                <button type="button" class="btn btn-secondary fill-draw-restart">重新绘制</button>
+                <button type="button" class="btn btn-secondary fill-draw-cancel">取消</button>
+                <button type="button" class="btn btn-primary fill-draw-finish">完成</button>
+            </div>
+        </div>`;
+    editorMapWrapper.appendChild(overlay);
+
+    fillDrawState = {
+        overlay,
+        svg: overlay.querySelector('.fill-draw-canvas'),
+        status: overlay.querySelector('.fill-draw-status'),
+        finishButton: overlay.querySelector('.fill-draw-finish'),
+        points: sanitizeFillPoints(options.points),
+        previewPoint: null,
+        closed: options.closed === true && sanitizeFillPoints(options.points).length >= 3,
+        autoFinishOnClose: options.autoFinishOnClose === true,
+        onComplete: options.onComplete,
+        onCancel: options.onCancel,
+        dragIndex: null,
+        dragMoved: false,
+        suppressClick: false
+    };
+
+    const svg = fillDrawState.svg;
+    overlay.addEventListener('mousedown', event => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    svg.addEventListener('click', handleFillDrawClick);
+    svg.addEventListener('dblclick', event => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    svg.addEventListener('pointerdown', handleFillDrawPointerDown);
+    svg.addEventListener('pointermove', handleFillDrawPointerMove);
+    svg.addEventListener('pointerup', handleFillDrawPointerUp);
+    svg.addEventListener('pointercancel', handleFillDrawPointerUp);
+    svg.addEventListener('contextmenu', handleFillDrawContextMenu);
+    overlay.querySelector('.fill-draw-restart').addEventListener('click', event => {
+        event.stopPropagation();
+        restartFillDrawPolygon();
+    });
+    overlay.querySelector('.fill-draw-cancel').addEventListener('click', event => {
+        event.stopPropagation();
+        cancelFillMarkerDrawMode();
+    });
+    fillDrawState.finishButton.addEventListener('click', event => {
+        event.stopPropagation();
+        finishFillMarkerDrawMode();
+    });
+    document.addEventListener('keydown', handleFillDrawKeydown, true);
+    editorMapWrapper.classList.add('drawing-fill-marker');
+    renderFillDrawOverlay();
+}
+
+function startNewFillMarkerDrawing(x, y) {
+    const firstPoint = Number.isFinite(x) && Number.isFinite(y)
+        && x >= 0 && y >= 0 && x <= editorMapImg.naturalWidth && y <= editorMapImg.naturalHeight
+        ? [{ x, y }]
+        : [];
+    enterFillMarkerDrawMode({
+        points: firstPoint,
+        closed: false,
+        autoFinishOnClose: true,
+        onComplete: worldPoints => {
+            const normalized = normalizeFillWorldPoints(worldPoints);
+            if (!normalized) return;
+            openMarkerForm(null, normalized.x, normalized.y, 'fill');
+            setFillPointsField(normalized.points);
+        }
+    });
+}
+
+function editFillPolygonFromForm() {
+    const xField = document.getElementById('markerX');
+    const yField = document.getElementById('markerY');
+    const scaleField = document.getElementById('markerScale');
+    const rotationField = document.getElementById('markerRotation');
+    const x = parseFloat(xField.value) || 0;
+    const y = parseFloat(yField.value) || 0;
+    const markerScale = Math.max(0.01, parseFloat(scaleField.value) || 1);
+    const rotation = parseFloat(rotationField.value) || 0;
+    const localPoints = getFillPointsField();
+    const worldPoints = fillLocalPointsToWorld(localPoints, x, y, markerScale, rotation);
+
+    markerFormModal.classList.remove('active');
+    enterFillMarkerDrawMode({
+        points: worldPoints,
+        closed: worldPoints.length >= 3,
+        autoFinishOnClose: worldPoints.length < 3,
+        onComplete: editedWorldPoints => {
+            const normalized = normalizeFillWorldPoints(editedWorldPoints, x, y, markerScale, rotation);
+            if (normalized) {
+                xField.value = Number(normalized.x.toFixed(3));
+                yField.value = Number(normalized.y.toFixed(3));
+                setFillPointsField(normalized.points);
+            }
+            markerFormModal.classList.add('active');
+        },
+        onCancel: () => markerFormModal.classList.add('active')
+    });
+}
+
 // Open marker form
 function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
     editingMarkerId = markerId;
@@ -1958,9 +2496,21 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
             setColorPickerValue('strokeColor', 'strokeColorAlpha', 'strokeColorAlphaLabel', marker.strokeColor || '#222222ff');
             document.getElementById('strokeWidth').value = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
             document.getElementById('shapeLabel').value = marker.label || '';
-            document.getElementById('markerDescription').value = marker.description || '';
+            document.getElementById('shapeDescription').value = marker.description || '';
             document.getElementById('textDetails').innerHTML = marker.details || '';
             updateArrowOnlyVisibility();
+        } else if (markerType === 'fill') {
+            setFillPointsField(marker.points);
+            document.getElementById('fillTextContent').value = marker.textContent || marker.label || '';
+            document.getElementById('fillTextPosition').value = marker.textPosition || 'center';
+            document.getElementById('fillFontSize').value = marker.fontSize || 16;
+            setColorPickerValue('fillTextColor', 'fillTextColorAlpha', 'fillTextColorAlphaLabel', marker.textColor || '#222222ff');
+            setColorPickerValue('fillMarkerFillColor', 'fillMarkerFillColorAlpha', 'fillMarkerFillColorAlphaLabel', marker.fillColor || '#4a90e280');
+            setColorPickerValue('fillMarkerStrokeColor', 'fillMarkerStrokeColorAlpha', 'fillMarkerStrokeColorAlphaLabel', marker.strokeColor || '#222222ff');
+            document.getElementById('fillMarkerStrokeWidth').value = (marker.strokeWidth != null) ? marker.strokeWidth : 2;
+            document.getElementById('fillLabel').value = marker.label || '';
+            document.getElementById('fillDescription').value = marker.description || '';
+            document.getElementById('textDetails').innerHTML = marker.details || '';
         } else {
             // 图标标记
             document.getElementById('iconCategory').value = marker.category || 'other';
@@ -2009,6 +2559,16 @@ function openMarkerForm(markerId = null, x = 0, y = 0, defaultType = 'icon') {
         document.getElementById('showIcon').checked = true;
         document.getElementById('showIconLabel').checked = true;
         document.getElementById('showDetails').checked = false;
+        setFillPointsField([]);
+        document.getElementById('fillTextContent').value = '';
+        document.getElementById('fillTextPosition').value = 'center';
+        document.getElementById('fillFontSize').value = 16;
+        setColorPickerValue('fillTextColor', 'fillTextColorAlpha', 'fillTextColorAlphaLabel', '#222222ff');
+        setColorPickerValue('fillMarkerFillColor', 'fillMarkerFillColorAlpha', 'fillMarkerFillColorAlphaLabel', '#4a90e280');
+        setColorPickerValue('fillMarkerStrokeColor', 'fillMarkerStrokeColorAlpha', 'fillMarkerStrokeColorAlphaLabel', '#222222ff');
+        document.getElementById('fillMarkerStrokeWidth').value = 2;
+        document.getElementById('fillLabel').value = '';
+        document.getElementById('fillDescription').value = '';
 
         // 触发类型切换
         handleMarkerTypeChange({ target: { value: defaultType } });
@@ -2050,12 +2610,13 @@ async function upsertMarkerLocal(newMarker) {
     if (typeof updateEditorMarkerVisibility === 'function') {
         updateEditorMarkerVisibility();
     }
-    // 保持选中状态    const markerEl = document.querySelector(`.marker[data-id="${newMarker.id}"]`);
+    // 保持选中状态
+    const markerEl = document.querySelector(`.marker[data-id="${newMarker.id}"]`);
     if (markerEl) {
         markerEl.classList.add('selected');
-    // [perf] Boost z-index so selection box (z-index: 999999) stays above selected marker, while keeping marker visible above all others
-    markerEl.dataset.originalZIndex = markerEl.style.zIndex;
-    markerEl.style.zIndex = '999998';
+        // [perf] Boost z-index so selection box stays above the selected marker.
+        markerEl.dataset.originalZIndex = markerEl.style.zIndex;
+        markerEl.style.zIndex = '999998';
         if (typeof createSelectionBox === 'function') {
             createSelectionBox(newMarker, markerEl);
         }
@@ -2071,6 +2632,17 @@ function renderSingleMarker(marker) {
         // icon label/visibility). applyMarkerTransform only handles
         // position/scale/rotation, so without this the visible text/style will
         // not refresh after editing the marker's form fields.
+        const wasSelected = existing.classList.contains('selected');
+        const markerType = marker.type || 'icon';
+        existing.className = markerType === 'text'
+            ? 'marker marker-text-only'
+            : markerType === 'shape'
+                ? 'marker marker-shape'
+                : markerType === 'fill'
+                    ? 'marker marker-fill'
+                    : `marker ${marker.category || 'other'}`;
+        if (wasSelected) existing.classList.add('selected');
+        if (isMarkerLocked(marker)) existing.classList.add('marker-locked');
         existing.innerHTML = buildMarkerInnerHTML(marker);
         applyMarkerTransform(marker, existing);
         existing.style.zIndex = parseInt(marker.zIndex, 10) || 0;
@@ -2126,7 +2698,7 @@ async function saveMarker(e) {
             fillColor: getColorPickerValue('fillColor', 'fillColorAlpha'),
             strokeColor: getColorPickerValue('strokeColor', 'strokeColorAlpha'),
             strokeWidth: parseFloat(document.getElementById('strokeWidth').value) || 0,
-            description: document.getElementById('markerDescription').value,
+            description: document.getElementById('shapeDescription').value,
             details: document.getElementById('textDetails').innerHTML,
             width: originalMarker ? originalMarker.width : undefined,
             height: originalMarker ? originalMarker.height : undefined
@@ -2136,6 +2708,28 @@ async function saveMarker(e) {
             markerData.arrowStyle = document.getElementById('arrowStyle').value;
             markerData.anchor = document.getElementById('arrowAnchor').value;
         }
+    } else if (markerType === 'fill') {
+        const points = getFillPointsField();
+        if (points.length < 3) {
+            alert('请先绘制并闭合多边形，至少需要 3 个顶点。');
+            return;
+        }
+        markerData = {
+            ...baseData,
+            category: 'area',
+            label: document.getElementById('fillLabel').value,
+            textContent: document.getElementById('fillTextContent').value,
+            textPosition: document.getElementById('fillTextPosition').value,
+            fontSize: parseInt(document.getElementById('fillFontSize').value, 10) || 16,
+            textColor: getColorPickerValue('fillTextColor', 'fillTextColorAlpha'),
+            fillColor: getColorPickerValue('fillMarkerFillColor', 'fillMarkerFillColorAlpha'),
+            strokeColor: getColorPickerValue('fillMarkerStrokeColor', 'fillMarkerStrokeColorAlpha'),
+            strokeWidth: Math.max(0, parseFloat(document.getElementById('fillMarkerStrokeWidth').value) || 0),
+            description: document.getElementById('fillDescription').value,
+            details: document.getElementById('textDetails').innerHTML,
+            points,
+            pointsSpace: 'local'
+        };
     } else {
         // 图标标记数据
         markerData = {
@@ -2247,40 +2841,12 @@ window.copyMarker = function (markerId) {
         return;
     }
 
-    // Deep copy marker data, excluding unique fields (id, x, y)
-    // 保留所有视�?样式属�? 包括 rotation (旋转角度)
-    copiedMarkerData = {
-        type: marker.type,
-        category: marker.category,
-        label: marker.label,
-        content: marker.content,
-        fontSize: marker.fontSize,
-        textColor: marker.textColor,
-        bgColor: marker.bgColor,
-        borderColor: marker.borderColor,
-        borderWidth: marker.borderWidth,
-        showIcon: marker.showIcon,
-        showLabel: marker.showLabel,
-        showDetails: marker.showDetails,
-        description: marker.description,
-        department: marker.department,
-        phone: marker.phone,
-        email: marker.email,
-        details: marker.details,
-        scale: marker.scale || 1.0,
-        rotation: marker.rotation || 0,
-        zIndex: marker.zIndex || 0,
-        width: marker.width,
-        height: marker.height,
-        // 形状标记字段
-        shape: marker.shape,
-        fillColor: marker.fillColor,
-        strokeColor: marker.strokeColor,
-        strokeWidth: marker.strokeWidth,
-        // 箭头专属字段
-        arrowStyle: marker.arrowStyle,
-        anchor: marker.anchor
-    };
+    copiedMarkerData = JSON.parse(JSON.stringify(marker));
+    copiedMarkerData.type = copiedMarkerData.type || 'icon';
+    delete copiedMarkerData.id;
+    delete copiedMarkerData.x;
+    delete copiedMarkerData.y;
+    delete copiedMarkerData.locked;
 
     // Filter out null or undefined values to avoid validation rejections on optional fields
     for (const key in copiedMarkerData) {
@@ -2321,6 +2887,30 @@ window.pasteMarkerData = function () {
         if (copiedMarkerData.borderColor) setColorPickerValue('borderColor', 'borderColorAlpha', 'borderColorAlphaLabel', copiedMarkerData.borderColor);
         if (copiedMarkerData.borderWidth) document.getElementById('borderWidth').value = copiedMarkerData.borderWidth;
         if (copiedMarkerData.details) document.getElementById('textDetails').innerHTML = copiedMarkerData.details;
+    } else if (markerType === 'shape') {
+        document.getElementById('shapeCategory').value = copiedMarkerData.category || 'other';
+        document.getElementById('shapeType').value = copiedMarkerData.shape || 'rect';
+        document.getElementById('arrowStyle').value = copiedMarkerData.arrowStyle || 'solid';
+        document.getElementById('arrowAnchor').value = copiedMarkerData.anchor || 'tip';
+        setColorPickerValue('fillColor', 'fillColorAlpha', 'fillColorAlphaLabel', copiedMarkerData.fillColor || '#4a90e2ff');
+        setColorPickerValue('strokeColor', 'strokeColorAlpha', 'strokeColorAlphaLabel', copiedMarkerData.strokeColor || '#222222ff');
+        document.getElementById('strokeWidth').value = (copiedMarkerData.strokeWidth != null) ? copiedMarkerData.strokeWidth : 2;
+        document.getElementById('shapeLabel').value = copiedMarkerData.label || '';
+        document.getElementById('shapeDescription').value = copiedMarkerData.description || '';
+        document.getElementById('textDetails').innerHTML = copiedMarkerData.details || '';
+        updateArrowOnlyVisibility();
+    } else if (markerType === 'fill') {
+        setFillPointsField(copiedMarkerData.points);
+        document.getElementById('fillTextContent').value = copiedMarkerData.textContent || copiedMarkerData.label || '';
+        document.getElementById('fillTextPosition').value = copiedMarkerData.textPosition || 'center';
+        document.getElementById('fillFontSize').value = copiedMarkerData.fontSize || 16;
+        setColorPickerValue('fillTextColor', 'fillTextColorAlpha', 'fillTextColorAlphaLabel', copiedMarkerData.textColor || '#222222ff');
+        setColorPickerValue('fillMarkerFillColor', 'fillMarkerFillColorAlpha', 'fillMarkerFillColorAlphaLabel', copiedMarkerData.fillColor || '#4a90e280');
+        setColorPickerValue('fillMarkerStrokeColor', 'fillMarkerStrokeColorAlpha', 'fillMarkerStrokeColorAlphaLabel', copiedMarkerData.strokeColor || '#222222ff');
+        document.getElementById('fillMarkerStrokeWidth').value = (copiedMarkerData.strokeWidth != null) ? copiedMarkerData.strokeWidth : 2;
+        document.getElementById('fillLabel').value = copiedMarkerData.label || '';
+        document.getElementById('fillDescription').value = copiedMarkerData.description || '';
+        document.getElementById('textDetails').innerHTML = copiedMarkerData.details || '';
     } else {
         // Paste icon marker data
         if (copiedMarkerData.category) {
@@ -2335,7 +2925,7 @@ window.pasteMarkerData = function () {
         if (copiedMarkerData.phone) document.getElementById('markerPhone').value = copiedMarkerData.phone;
         if (copiedMarkerData.email) document.getElementById('markerEmail').value = copiedMarkerData.email;
         // 粘贴详情(富文�?, 与文字标记共用编辑器
-        if (copiedMarkerData.details) document.getElementById('textDetails').innerHTML = copiedMarkerData.details;
+        document.getElementById('textDetails').innerHTML = copiedMarkerData.details || '';
     }
 
     // Paste common fields
@@ -2731,6 +3321,9 @@ function handleContextMenuClick(e) {
         case 'add-shape':
             openMarkerForm(null, contextMenuX, contextMenuY, 'shape');
             break;
+        case 'add-fill':
+            startNewFillMarkerDrawing(contextMenuX, contextMenuY);
+            break;
         case 'edit-marker':
             if (contextMenuTargetMarkerId) {
                 openMarkerForm(contextMenuTargetMarkerId);
@@ -2765,12 +3358,14 @@ function handleMarkerTypeChange(e) {
     const textSettings = document.getElementById('textMarkerSettings');
     const iconSettings = document.getElementById('iconMarkerSettings');
     const shapeSettings = document.getElementById('shapeMarkerSettings');
+    const fillSettings = document.getElementById('fillMarkerSettings');
     const iconExtraInfo = document.getElementById('iconExtraInfo');
 
     if (markerType === 'text') {
         textSettings.style.display = 'block';
         iconSettings.style.display = 'none';
         shapeSettings.style.display = 'none';
+        if (fillSettings) fillSettings.style.display = 'none';
         iconExtraInfo.style.display = 'none';
         // 文字标记的必填字�?
         document.getElementById('textContent').required = true;
@@ -2780,15 +3375,26 @@ function handleMarkerTypeChange(e) {
         textSettings.style.display = 'none';
         iconSettings.style.display = 'none';
         shapeSettings.style.display = 'block';
-        iconExtraInfo.style.display = 'none';
+        if (fillSettings) fillSettings.style.display = 'none';
         document.getElementById('textContent').required = false;
         document.getElementById('iconCategory').required = false;
         document.getElementById('iconLabel').required = false;
         updateArrowOnlyVisibility();
+    } else if (markerType === 'fill') {
+        textSettings.style.display = 'none';
+        iconSettings.style.display = 'none';
+        shapeSettings.style.display = 'none';
+        if (fillSettings) fillSettings.style.display = 'block';
+        iconExtraInfo.style.display = 'none';
+        document.getElementById('textContent').required = false;
+        document.getElementById('iconCategory').required = false;
+        document.getElementById('iconLabel').required = false;
+
     } else {
         textSettings.style.display = 'none';
         iconSettings.style.display = 'block';
         shapeSettings.style.display = 'none';
+        if (fillSettings) fillSettings.style.display = 'none';
         iconExtraInfo.style.display = 'block';
         // 图标标记的必填字�?
         document.getElementById('textContent').required = false;
@@ -3192,19 +3798,24 @@ function applyMarkerTransform(marker, markerEl) {
     const rotation = marker.rotation || 0;
     const isText = marker.type === 'text';
     const isShape = marker.type === 'shape';
+    const isFill = marker.type === 'fill';
 
-    if (isText || isShape) {
-        if (isText && !marker.width) {
-            markerEl.style.width = 'max-content';
+    if (isText || isShape || isFill) {
+        if (isFill) {
+            applyFillMarkerSize(marker, markerEl, sizeMul);
         } else {
-            const baseW = marker.width || (48 * markerScale);
-            markerEl.style.width = (baseW * sizeMul) + 'px';
-        }
-        if (isText && !marker.height) {
-            markerEl.style.height = 'max-content';
-        } else {
-            const baseH = marker.height || (32 * markerScale);
-            markerEl.style.height = (baseH * sizeMul) + 'px';
+            if (isText && !marker.width) {
+                markerEl.style.width = 'max-content';
+            } else {
+                const baseW = marker.width || (48 * markerScale);
+                markerEl.style.width = (baseW * sizeMul) + 'px';
+            }
+            if (isText && !marker.height) {
+                markerEl.style.height = 'max-content';
+            } else {
+                const baseH = marker.height || (32 * markerScale);
+                markerEl.style.height = (baseH * sizeMul) + 'px';
+            }
         }
         if (isText) {
             const label = markerEl.querySelector('.text-label');
