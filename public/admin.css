@@ -981,7 +981,7 @@
 
 /* Selected Marker Styles */
 .marker.selected {
-    z-index: 1000 !important;
+    z-index: 999998 !important;
 }
 
 .marker-selection-box {
@@ -990,6 +990,9 @@
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 10px rgba(74, 144, 226, 0.5);
     pointer-events: none;
     display: none;
+    z-index: 999999;
+    will-change: left, top, width, height;
+    contain: layout style;
 }
 
 .marker-selection-box.active {
@@ -1006,15 +1009,14 @@
     border-radius: 50%;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     pointer-events: all;
-    z-index: 10;
+    z-index: 100;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.1s ease, background-color 0.1s ease;
 }
 
 .resize-handle:hover {
     background: var(--primary-color);
-    transform: scale(1.4);
-    box-shadow: 0 3px 8px rgba(74, 144, 226, 0.5);
+    border-color: #fff;
 }
 
 /* Corner handles */
@@ -1108,6 +1110,24 @@
     pointer-events: none;
     z-index: 10;
     border-radius: 1px;
+}
+
+/* Marker: disable all transitions when actively interacting */
+.marker.no-transition,
+.marker.dragging,
+.marker.no-transition *,
+.marker.dragging * {
+    transition: none !important;
+    animation: none !important;
+}
+
+.marker-selection-box.no-transition,
+.marker-selection-box.no-transition * {
+    transition: none !important;
+}
+
+.marker-selection-box.dragging {
+    box-shadow: none;
 }
 
 /* Marker being dragged */

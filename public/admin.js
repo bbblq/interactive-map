@@ -54,6 +54,9 @@ const editorMapWrapper = document.getElementById('editorMapWrapper');
 const editorMapImage = document.getElementById('editorMapImage');
 const editorMapImg = document.getElementById('editorMapImg');
 const editorMarkersContainer = document.getElementById('editorMarkers');
+
+// [perf] Marker DOM cache: id -> element, avoids querySelector on every mousemove
+const markerElementsById = new Map();
 const editorEmptyState = document.getElementById('editorEmptyState');
 const editorZoomControls = document.getElementById('editorZoomControls');
 const markersList = document.getElementById('markersList');
@@ -75,6 +78,11 @@ let selectedMarkerId = null;
 let selectionBox = null;
 let isResizing = false;
 let resizeHandle = null;
+
+// [perf] rAF coalescing: collapse multiple mousemove events into one paint per frame
+let moveRafId = 0;
+let pendingMoveEvent = null;
+let moveHandlerFn = null;
 let isRotating = false;
 let rotateStartAngle = 0;
 let markerStartRotation = 0;
@@ -921,7 +929,7 @@ async function loadMarkers() {
         // 如果当前有选中的标记，重新建立选择框（以同步位置和状态）
         if (selectedMarkerId) {
             const marker = markers.find(m => m.id === selectedMarkerId);
-            const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+            const markerEl = markerElementsById.get(selectedMarkerId);
             if (marker && markerEl) {
                 selectMarker(selectedMarkerId, null);
             } else {
@@ -1013,6 +1021,38 @@ function syncSelectionBoxToSelected() {
         handle.style.height = baseHandleSize + 'px';
     });
     updateHandlePositions(baseHandleSize);
+}
+// [perf] Per-frame sync during resize: compute from marker data, no getBoundingClientRect.
+//       selection box uses same transform scale as marker, so wrapping math is straightforward.
+function fastSyncSelectionBoxFromMarker(marker) {
+    if (!selectionBox) return;
+    const sizeMul = globalMarkerSizeMultiplier || 1.0;
+    const isText = marker.type === 'text';
+    const isShape = marker.type === 'shape';
+    let baseW, baseH;
+    if (isText || isShape) {
+        if (isText && !marker.width) {
+            if (resizeContextMarkerEl) {
+                baseW = resizeContextMarkerEl.offsetWidth / editorScale / sizeMul;
+            } else { baseW = 0; }
+        } else {
+            baseW = (marker.width || (48 * (marker.scale || 1.0))) / sizeMul;
+        }
+        if (isText && !marker.height) {
+            if (resizeContextMarkerEl) {
+                baseH = resizeContextMarkerEl.offsetHeight / editorScale / sizeMul;
+            } else { baseH = 0; }
+        } else {
+            baseH = (marker.height || (32 * (marker.scale || 1.0))) / sizeMul;
+        }
+    } else {
+        baseW = EDITOR_MARKER_BASE * (marker.scale || 1.0);
+        baseH = EDITOR_MARKER_BASE * (marker.scale || 1.0);
+    }
+    selectionBox.style.width = (baseW * sizeMul) + 'px';
+    selectionBox.style.height = (baseH * sizeMul) + 'px';
+    selectionBox.style.left = (editorTranslateX + marker.x * editorScale) + 'px';
+    selectionBox.style.top = (editorTranslateY + marker.y * editorScale) + 'px';
 }
 
 function updateEditorTransform() {
@@ -1375,6 +1415,7 @@ function handleMapClick(e) {
 // Render editor markers
 function renderEditorMarkers() {
     editorMarkersContainer.innerHTML = '';
+    markerElementsById.clear(); // [perf] reset DOM cache
 
     markers.forEach((marker) => {
         const markerEl = document.createElement('div');
@@ -1497,6 +1538,7 @@ function renderEditorMarkers() {
             markerEl.classList.add('marker-locked');
         }
         editorMarkersContainer.appendChild(markerEl);
+        markerElementsById.set(marker.id, markerEl);
     });
 
     updateEditorMarkerScales();
@@ -1942,6 +1984,9 @@ async function upsertMarkerLocal(newMarker) {
     const markerEl = document.querySelector(`.marker[data-id="${newMarker.id}"]`);
     if (markerEl) {
         markerEl.classList.add('selected');
+    // [perf] Boost z-index so selection box (z-index: 999999) stays above selected marker, while keeping marker visible above all others
+    markerEl.dataset.originalZIndex = markerEl.style.zIndex;
+    markerEl.style.zIndex = '999998';
         if (typeof createSelectionBox === 'function') {
             createSelectionBox(newMarker, markerEl);
         }
@@ -2753,7 +2798,14 @@ function selectMarker(markerId, event) {
 // Deselect marker
 function deselectMarker() {
     selectedMarkerId = null;
-    document.querySelectorAll('.marker.selected').forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.marker.selected').forEach(el => {
+        el.classList.remove('selected');
+        // [perf] Restore original z-index that was saved when marker was selected
+        if (el.dataset.originalZIndex !== undefined) {
+            el.style.zIndex = el.dataset.originalZIndex;
+            delete el.dataset.originalZIndex;
+        }
+    });
     if (selectionBox) {
         selectionBox.remove();
         selectionBox = null;
@@ -2919,6 +2971,20 @@ function updateHandlePositions(handleSize) {
 // --- NEW LOGIC: Resize Logic Global State ---
 let resizeStartBounds = null;
 
+// [perf] Cached rect of editorMapWrapper at drag/resize/rotate start, avoids getBoundingClientRect in mousemove
+let dragContextRect = null;
+let dragContextWrapRect = null;
+let rotateContextMapCenterX = 0;
+let rotateContextMapCenterY = 0;
+let rotateContextWrapLeft = 0;
+let rotateContextWrapTop = 0;
+let rotateContextMarkerEl = null;
+let rotateContextMarker = null;
+let resizeContextMarkerEl = null;
+let resizeContextMarker = null;
+let dragContextMarkerEl = null;
+let dragContextMarker = null;
+
 // Start rotating
 function startRotate(event) {
     inputLockZoom = true;  // [优化] 锁滚轮
@@ -2926,14 +2992,20 @@ function startRotate(event) {
     const marker = markers.find(m => m.id === selectedMarkerId);
     if (!marker) return;
 
-    const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+    const markerEl = markerElementsById.get(selectedMarkerId);
     if (!markerEl) return;
 
-    // 标记视觉中心 (考虑 editorScale �?translate 偏移)
-    const markerRect = markerEl.getBoundingClientRect();
+    // [perf] Cache wrapper rect + marker center, used in mousemove without getBoundingClientRect
     const containerRect = editorMapWrapper.getBoundingClientRect();
-    const centerX = (markerRect.left + markerRect.width / 2 - containerRect.left) / editorScale;
-    const centerY = (markerRect.top + markerRect.height / 2 - containerRect.top) / editorScale;
+    const markerRect = markerEl.getBoundingClientRect();
+    rotateContextMapCenterX = (markerRect.left + markerRect.width / 2 - containerRect.left) / editorScale;
+    rotateContextMapCenterY = (markerRect.top + markerRect.height / 2 - containerRect.top) / editorScale;
+    rotateContextWrapLeft = containerRect.left;
+    rotateContextWrapTop = containerRect.top;
+    rotateContextMarkerEl = markerEl;
+    rotateContextMarker = marker;
+    const centerX = rotateContextMapCenterX;
+    const centerY = rotateContextMapCenterY;
     const mouseX = (event.clientX - containerRect.left) / editorScale;
     const mouseY = (event.clientY - containerRect.top) / editorScale;
 
@@ -2953,10 +3025,16 @@ function startResize(handlePosition, event) {
     pushHistory('缩放标记');  // [优化] 推入历史
 
     const marker = markers.find(m => m.id === selectedMarkerId);
-    const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+    const markerEl = markerElementsById.get(selectedMarkerId);
     if (!marker || !markerEl) return;
+    resizeContextMarker = marker;
+    resizeContextMarkerEl = markerEl;
 
-    const rect = editorMapWrapper.getBoundingClientRect();
+    // [perf] Cache wrapper rect once (was re-read every frame -> forced layout flush)
+    const containerRect = editorMapWrapper.getBoundingClientRect();
+    resizeContextWrapLeft = containerRect.left;
+    resizeContextWrapTop = containerRect.top;
+    const rect = containerRect;
     
     // Get initial mouse position in map coordinates
     const startMouseX = (event.clientX - rect.left - editorTranslateX) / editorScale;
@@ -3003,8 +3081,7 @@ function startResize(handlePosition, event) {
     };
 }
 
-// Handle mouse move for dragging and resizing
-document.addEventListener('mousemove', handleEditorMouseMove); // Ensure listener is here if not already
+// (handleEditorMouseMove is registered once below; do not register again here)
 
 // [优化] 只更新单个标记的尺寸 + 旋转 + 内部 icon 部分尺寸
 //   用于拖动/缩放/旋转 mousemove 中, 避免调用 updateEditorMarkerScales 重绘全部
@@ -3062,8 +3139,13 @@ function handleEditorMouseMove(e) {
         if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
             isDraggingMarker = true;
             pendingDrag = false;
-            const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
-            if (markerEl) markerEl.classList.add('dragging');
+            const markerEl = markerElementsById.get(selectedMarkerId);
+            if (markerEl) {
+                markerEl.classList.add('dragging');
+                markerEl.classList.add('no-transition'); // [perf] skip CSS transitions during drag
+            }
+            dragContextMarker = marker;
+            dragContextMarkerEl = markerEl;
             markerStartX = markerStartX + (dx / editorScale);
             markerStartY = markerStartY + (dy / editorScale);
             dragStartX = e.clientX;
@@ -3075,29 +3157,20 @@ function handleEditorMouseMove(e) {
         }
     }
 
-    if (isRotating && selectedMarkerId) {
-        const marker = markers.find(m => m.id === selectedMarkerId);
-        if (!marker) return;
-        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
-        if (!markerEl) return;
-
-        const markerRect = markerEl.getBoundingClientRect();
-        const containerRect = editorMapWrapper.getBoundingClientRect();
-        const centerX = (markerRect.left + markerRect.width / 2 - containerRect.left) / editorScale;
-        const centerY = (markerRect.top + markerRect.height / 2 - containerRect.top) / editorScale;
-        const mouseX = (e.clientX - containerRect.left) / editorScale;
-        const mouseY = (e.clientY - containerRect.top) / editorScale;
-
-        const currentAngle = Math.atan2(mouseY - centerY, mouseX - centerX) * 180 / Math.PI;
+    if (isRotating && selectedMarkerId && rotateContextMarker && rotateContextMarkerEl) {
+        // [perf] Use cached center + wrapper rect (captured at startRotate); skip mark.
+        const marker = rotateContextMarker;
+        const markerEl = rotateContextMarkerEl;
+        const mouseX = (e.clientX - rotateContextWrapLeft) / editorScale;
+        const mouseY = (e.clientY - rotateContextWrapTop) / editorScale;
+        const currentAngle = Math.atan2(mouseY - rotateContextMapCenterY, mouseX - rotateContextMapCenterX) * 180 / Math.PI;
         const delta = currentAngle - rotateStartAngle;
         let newRotation = (markerStartRotation + delta) % 360;
         if (newRotation > 180) newRotation -= 360;
         if (newRotation < -180) newRotation += 360;
-
         marker.rotation = newRotation;
-        // [优化] 只更新被旋转的标记
         applyMarkerTransform(marker, markerEl);
-
+        // [perf] Throttle DOM field update: skip if not visible to user
         const rotField = document.getElementById('markerRotation');
         const idField = document.getElementById('markerId');
         if (rotField && idField && idField.value === selectedMarkerId) {
@@ -3107,7 +3180,8 @@ function handleEditorMouseMove(e) {
     }
 
     if (isDraggingMarker && selectedMarkerId) {
-        const marker = markers.find(m => m.id === selectedMarkerId);
+        // [perf] Use cached marker (captured at drag start) instead of markers.find
+        const marker = dragContextMarker || (dragContextMarker = markers.find(m => m.id === selectedMarkerId));
         if (!marker) return;
 
         const deltaX = (e.clientX - dragStartX) / editorScale;
@@ -3115,33 +3189,29 @@ function handleEditorMouseMove(e) {
         marker.x = markerStartX + deltaX;
         marker.y = markerStartY + deltaY;
 
-        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        const markerEl = dragContextMarkerEl || (dragContextMarkerEl = markerElementsById.get(selectedMarkerId));
         if (markerEl) {
-            // [优化] 只更新被拖动的标记屏幕坐标
+            // [perf] screenX/screenY is the marker center, used for both marker and selection box (no getBoundingClientRect needed)
             const screenX = editorTranslateX + marker.x * editorScale;
             const screenY = editorTranslateY + marker.y * editorScale;
             markerEl.style.left = screenX + 'px';
             markerEl.style.top = screenY + 'px';
 
             if (selectionBox) {
-                const containerRect = editorMarkersContainer.getBoundingClientRect();
-                const markerRect = markerEl.getBoundingClientRect();
-                const centerX = markerRect.left + markerRect.width / 2 - containerRect.left;
-                const centerY = markerRect.top + markerRect.height / 2 - containerRect.top;
-                selectionBox.style.left = centerX + 'px';
-                selectionBox.style.top = centerY + 'px';
+                // [perf] Was: getBoundingClientRect twice per frame -> forced layout flush.
+                //       Now: reuse screenX/screenY; selection box shares the same center anchor.
+                selectionBox.style.left = screenX + 'px';
+                selectionBox.style.top = screenY + 'px';
             }
         }
         return;
     }
 
-    if (isResizing && selectedMarkerId && resizeStartBounds) {
-        const marker = markers.find(m => m.id === selectedMarkerId);
-        if (!marker) return;
-
-        const rect = editorMapWrapper.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left - editorTranslateX) / editorScale;
-        const mouseY = (e.clientY - rect.top - editorTranslateY) / editorScale;
+    if (isResizing && selectedMarkerId && resizeStartBounds && resizeContextMarker) {
+        // [perf] Use cached marker + wrapper rect (captured at startResize); no getBoundingClientRect here.
+        const marker = resizeContextMarker;
+        const mouseX = (e.clientX - resizeContextWrapLeft - editorTranslateX) / editorScale;
+        const mouseY = (e.clientY - resizeContextWrapTop - editorTranslateY) / editorScale;
 
         const {
             startX, startY, startWidth, startHeight,
@@ -3217,14 +3287,15 @@ function handleEditorMouseMove(e) {
             }
         }
 
-        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        const markerEl = markerElementsById.get(selectedMarkerId);
         if (markerEl) {
             const screenX = editorTranslateX + marker.x * editorScale;
             const screenY = editorTranslateY + marker.y * editorScale;
             markerEl.style.left = screenX + 'px';
             markerEl.style.top = screenY + 'px';
             applyMarkerTransform(marker, markerEl);
-            syncSelectionBoxToSelected();
+            // [perf] Use layout-free variant during resize
+            fastSyncSelectionBoxFromMarker(marker);
         }
         updateScaleIndicator((isText || isShape) ? 1.0 : marker.scale);
     }
@@ -3273,7 +3344,7 @@ async function handleEditorMouseUp() {
     }
 
     if (isDraggingMarker && selectedMarkerId) {
-        const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+        const markerEl = markerElementsById.get(selectedMarkerId);
         if (markerEl) {
             markerEl.classList.remove('dragging');
         }
@@ -3317,16 +3388,43 @@ async function handleEditorMouseUp() {
         }
     }
 
+    // [perf] Remove no-transition + dragging class so CSS transitions resume normally
+    if (selectedMarkerId) {
+        const el = markerElementsById.get(selectedMarkerId);
+        if (el) {
+            el.classList.remove('dragging');
+            el.classList.remove('no-transition');
+        }
+    }
+    // [perf] Clear cached contexts; final full sync so handle sizes are correct after resize
+    resizeContextMarker = null;
+    resizeContextMarkerEl = null;
+    rotateContextMarker = null;
+    rotateContextMarkerEl = null;
+    dragContextMarker = null;
+    dragContextMarkerEl = null;
     isDraggingMarker = false;
     isResizing = false;
     isRotating = false;
     resizeHandle = null;
     pendingDrag = false;
     inputLockZoom = false;
+    if (selectionBox) syncSelectionBoxToSelected();
 }
 
 // Add global mouse event listeners
-document.addEventListener('mousemove', handleEditorMouseMove);
+// [perf] rAF-coalesced mousemove: collapses many events per frame into one paint
+function _rafHandleEditorMouseMove(e) {
+    pendingMoveEvent = e;
+    if (moveRafId) return;
+    moveRafId = requestAnimationFrame(() => {
+        moveRafId = 0;
+        const ev = pendingMoveEvent;
+        pendingMoveEvent = null;
+        if (ev) handleEditorMouseMove(ev);
+    });
+}
+document.addEventListener('mousemove', _rafHandleEditorMouseMove);
 document.addEventListener('mouseup', handleEditorMouseUp);
 
 // Click on map background to deselect and blur inputs
@@ -3934,7 +4032,7 @@ function setupZIndexButtons() {
                 const v = parseInt(zField.value, 10) || 0;
                 marker.zIndex = v;
                 // 立刻更新 DOM �?z-index, 不用等保�?
-                const markerEl = document.querySelector(`.marker[data-id="${selectedMarkerId}"]`);
+                const markerEl = markerElementsById.get(selectedMarkerId);
                 if (markerEl) markerEl.style.zIndex = v;
             }
         }
