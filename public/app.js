@@ -1341,39 +1341,42 @@ function arrayBufferToBase64(buffer) {
 
 async function loadPdfFont() {
     if (pdfFontBase64) return;
-    try {
-        const resp = await fetch('/fonts/NotoSansSC-Regular.ttf');
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const ab = await resp.arrayBuffer();
-        pdfFontBase64 = arrayBufferToBase64(ab);
-    } catch (e) {
-        console.warn('PDF: 中文字体加载失败, 将使用内置字体', e);
+    const resp = await fetch('/fonts/NotoSansSC-Regular.ttf', { cache: 'force-cache' });
+    if (!resp.ok) {
+        throw new Error('PDF 中文字体缺失，无法安全导出（HTTP ' + resp.status + '）');
     }
+    const ab = await resp.arrayBuffer();
+    const signature = Array.from(new Uint8Array(ab, 0, 4))
+        .map(value => value.toString(16).padStart(2, '0'))
+        .join('');
+    if (ab.byteLength < 1024 || !['00010000', '4f54544f', '74727565'].includes(signature)) {
+        throw new Error('PDF 中文字体文件无效，已停止导出');
+    }
+    pdfFontBase64 = arrayBufferToBase64(ab);
 }
 
 function registerPdfFont(doc) {
-    if (!pdfFontBase64) { pdfFontName = 'Helvetica'; doc.setFont('Helvetica'); return; }
+    if (!pdfFontBase64) throw new Error('PDF 中文字体尚未加载');
     try {
         doc.addFileToVFS('NotoSansSC-Regular.ttf', pdfFontBase64);
         doc.addFont('NotoSansSC-Regular.ttf', 'NotoSansSC', 'normal');
         doc.setFont('NotoSansSC');
         pdfFontName = 'NotoSansSC';
-    } catch (e) {
-        console.warn('PDF: 字体注册失败', e);
-        pdfFontName = 'Helvetica'; doc.setFont('Helvetica');
+    } catch (error) {
+        throw new Error('PDF 中文字体注册失败: ' + error.message);
     }
 }
 
 // 防御性 PDF 字体恢复: svg2pdf.js 的 doc.svg() 会污染 jsPDF 内部字体状态,
 // 每次绘制文字前强制重新注册字体 (VFS + addFont + setFont), 确保中文不乱码.
 function ensurePdfFont(doc) {
-    if (!pdfFontBase64) { doc.setFont('Helvetica'); return; }
+    if (!pdfFontBase64) throw new Error('PDF 中文字体尚未加载');
     try {
         doc.addFileToVFS('NotoSansSC-Regular.ttf', pdfFontBase64);
         doc.addFont('NotoSansSC-Regular.ttf', 'NotoSansSC', 'normal');
         doc.setFont('NotoSansSC');
-    } catch (e) {
-        try { doc.setFont('NotoSansSC'); } catch (_) { doc.setFont('Helvetica'); }
+    } catch (error) {
+        throw new Error('PDF 中文字体恢复失败: ' + error.message);
     }
 }
 

@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const db = require('./db');
 const backupUtils = require('./backup-utils');
+const packageInfo = require('./package.json');
 
 const app = express();
 const PORT = config.PORT;
@@ -47,6 +48,12 @@ async function ensureDir(dir) {
     await fs.mkdir(dir, { recursive: true });
   }
 }
+
+// Public build version used by the admin UI.
+app.get('/api/version', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ version: packageInfo.version });
+});
 
 // Authentication Middleware
 function requireAuth(req, res, next) {

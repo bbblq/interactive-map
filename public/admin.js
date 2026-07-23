@@ -588,6 +588,20 @@ function init() {
 }
 
 // Check authentication
+async function loadAppVersion() {
+    try {
+        const response = await fetch('/api/version', { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json();
+        const title = document.getElementById('markerManagementTitle');
+        if (title && data.version) {
+            title.textContent = '📍 标记管理 (v' + data.version + ')';
+        }
+    } catch (error) {
+        console.warn('Failed to load app version:', error);
+    }
+}
+
 async function checkAuth() {
     try {
         const response = await fetch('/api/admin/status');
@@ -674,6 +688,7 @@ async function showAdminPanel() {
     loginScreen.style.display = 'none';
     adminPanel.style.display = 'block';
     isAuthenticated = true;
+    await loadAppVersion();
 
     // 先加载 iconTypes
     await loadIconTypes();

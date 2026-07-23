@@ -26,6 +26,5 @@ uploads/*
 .idea/
 
 # Local dev artifacts
-public/fonts/
 scratch/
 
