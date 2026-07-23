@@ -848,10 +848,6 @@ function setupAdminListeners() {
         try { const sel = window.getSelection && window.getSelection(); if (sel && sel.rangeCount > 0) sel.removeAllRanges(); } catch (_) {}
     }, true);
     editorMapWrapper.addEventListener('wheel', (e) => {
-        if (fillDrawState) {
-            e.preventDefault();
-            return;
-        }
         // [优化] 拖动/缩放/旋转期间禁止滚轮缩放, 避免“拖着拖着就被放大几倍”
         if (inputLockZoom || isDraggingMarker || isResizing || isRotating || pendingDrag) return;
         e.preventDefault();
@@ -1729,6 +1725,7 @@ function renderEditorMarkers() {
     });
 
     updateEditorMarkerScales();
+    updateEditorMarkerVisibility();
 
     // 如果当前有选中的标记，恢复其列表中的选中状�?
     if (selectedMarkerId) {
@@ -1749,7 +1746,7 @@ function getMarkerDisplayName(marker) {
     const shapeNames = { rect: '矩形', circle: '圆形', arrow: '箭头' };
     if (marker.type === 'text') return marker.content || marker.label || '(未命名文字)';
     if (marker.type === 'shape') return marker.label || `(${shapeNames[marker.shape] || '形状'})`;
-    if (marker.type === 'fill') return marker.label || marker.textContent || '(未命名填色区域)';
+    if (marker.type === 'fill') return marker.textContent || marker.label || '(未命名填色区域)';
     return marker.label || '(未命名)';
 }
 
