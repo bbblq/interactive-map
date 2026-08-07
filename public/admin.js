@@ -108,6 +108,9 @@ let editingIconTypeId = null;
 let adminCollapsedCategories = new Set();
 let adminHiddenCategories = new Set();
 let adminMarkerSearchQuery = '';
+let tagGroupsData = [];
+let adminSelectMode = false;
+let adminSelectedMarkerIds = new Set();
 
 // Copy-Paste State Management
 let copiedMarkerData = null;
@@ -1020,6 +1023,7 @@ async function loadMarkers() {
         const response = await fetch('/api/markers');
         markers = await response.json();
         renderEditorMarkers();
+        await loadTagGroups();
         renderMarkersList();
 
         // 如果当前有选中的标记，重新建立选择框（以同步位置和状态）
@@ -1785,89 +1789,129 @@ function renderMarkersList() {
         return;
     }
 
-    // Group markers by category
-    const grouped = {};
-    filteredMarkers.forEach(m => {
-        const cat = m.category || 'other';
-        if (!grouped[cat]) grouped[cat] = [];
-        grouped[cat].push(m);
+    // Identify grouped and ungrouped
+    const groupedMarkers = new Set();
+    tagGroupsData.forEach(g => {
+        (g.markerIds || []).forEach(id => groupedMarkers.add(id));
     });
 
-    // Sort categories by iconTypes order
-    const sortedCategories = Object.keys(grouped).sort((a, b) => {
-        const orderA = (iconTypes[a] && iconTypes[a].order) || 999;
-        const orderB = (iconTypes[b] && iconTypes[b].order) || 999;
-        if (orderA !== orderB) return orderA - orderB;
-        return a.localeCompare(b);
+    const ungrouped = filteredMarkers.filter(m => !groupedMarkers.has(m.id));
+
+    let html = `
+        <div style="display: flex; gap: 8px; margin-bottom: 10px; padding: 0 10px;">
+            <button class="btn btn-secondary btn-sm" onclick="openTagGroupManager()" style="flex: 1;">📂 分组管理</button>
+            <button class="btn btn-secondary btn-sm" id="selectModeBtn" onclick="toggleSelectMode()" style="flex: 1;">${adminSelectMode ? '✅ 退出多选' : '☑️ 多选'}</button>
+        </div>
+        <div id="batchActionBar" style="display: ${adminSelectMode ? 'flex' : 'none'}; justify-content: space-between; align-items: center; padding: 8px 10px; background: #eef2f5; border-radius: 6px; margin: 0 10px 10px; font-size: 13px;">
+            <div>已选 <strong id="batchSelectedCount">${adminSelectedMarkerIds.size}</strong> 项</div>
+            <div style="display: flex; gap: 5px;">
+                <button class="btn btn-primary btn-sm" onclick="openBatchGroupAssign()">移入分组</button>
+                <button class="btn btn-secondary btn-sm" onclick="selectAllMarkersInView()">全选</button>
+                <button class="btn btn-secondary btn-sm" onclick="deselectAllMarkers()">清空</button>
+            </div>
+        </div>
+    `;
+
+    function renderMarkerItem(marker, groupId = null) {
+        const displayName = getMarkerDisplayName(marker);
+        const markerHidden = adminHiddenCategories.has(marker.category || 'other');
+        const markerLocked = isMarkerLocked(marker);
+        const isSelected = adminSelectMode && adminSelectedMarkerIds.has(marker.id);
+        
+        return `
+        <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}${markerHidden ? ' marker-cat-hidden' : ''}${markerLocked ? ' locked' : ''}${isSelected ? ' selected' : ''}"
+             data-id="${marker.id}"
+             tabindex="0"
+             onclick="${adminSelectMode ? `toggleMarkerSelect('${marker.id}', event)` : `selectMarkerFromList('${marker.id}')`}"
+             ondblclick="focusAdminMarker('${marker.id}')"
+             onkeydown="handleMarkerListKeydown(event, '${marker.id}')">
+          <div class="marker-item-header">
+            <div class="marker-item-title">
+              ${adminSelectMode ? `<input type="checkbox" class="marker-select-cb" data-id="${marker.id}" ${isSelected ? 'checked' : ''} onclick="toggleMarkerSelect('${marker.id}', event)" style="margin-right: 8px; pointer-events: none;">` : ''}
+              <span class="marker-item-icon">${getMarkerListIcon(marker)}</span>
+              <span class="marker-item-name">${escapeHtml(displayName)}</span>
+              ${markerLocked ? '<span class="marker-locked-badge" title="已锁定（防误触）">🔒</span>' : ''}
+            </div>
+            <div class="marker-item-actions">
+              ${adminSelectMode ? '' : `
+              <button class="icon-btn${markerLocked ? ' lock-active' : ''}" onclick="event.stopPropagation(); toggleMarkerLock('${marker.id}')" title="${markerLocked ? '解锁标记' : '锁定标记（防误触）'}">${markerLocked ? '🔓' : '🔒'}</button>
+              ${markerLocked ? '' : `
+              ${groupId ? `<button class="icon-btn" onclick="event.stopPropagation(); removeMarkerFromGroup('${groupId}', '${marker.id}')" title="从分组移除">❌</button>` : ''}
+              <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
+              <button class="icon-btn" onclick="event.stopPropagation(); editMarker('${marker.id}')" title="编辑">✏️</button>
+              <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑️</button>`}
+              `}
+            </div>
+          </div>
+          ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
+        </div>`;
+    }
+
+    // Render tag groups
+    tagGroupsData.forEach(group => {
+        const groupMarkers = (group.markerIds || [])
+            .map(id => filteredMarkers.find(m => m.id === id))
+            .filter(Boolean);
+            
+        if (groupMarkers.length > 0) {
+            const isCollapsed = adminCollapsedCategories.has('tg_' + group.id);
+            const count = groupMarkers.length;
+            
+            groupMarkers.sort((a, b) => {
+                return getMarkerDisplayName(a).localeCompare(getMarkerDisplayName(b), 'zh-CN', { numeric: true });
+            });
+
+            html += `<div class="admin-marker-group" data-category="tg_${group.id}">`;
+            html += `<div class="admin-group-header" onclick="toggleAdminCategory('tg_${group.id}')">`;
+            html += `<div class="admin-group-left">`;
+            html += `<span class="admin-collapse-icon${isCollapsed ? '' : ' expanded'}">${isCollapsed ? '▶' : '▼'}</span>`;
+            html += `<span class="admin-group-color" style="background: ${group.color || '#4a90e2'}"></span>`;
+            html += `<span class="admin-group-icon">${group.icon || '📦'}</span>`;
+            html += `<span class="admin-group-title">${escapeHtml(group.name)}</span>`;
+            html += `<span class="admin-group-count">${count}</span>`;
+            html += `</div>`;
+            html += `</div>`;
+
+            if (!isCollapsed) {
+                html += `<div class="admin-group-items">`;
+                groupMarkers.forEach(marker => {
+                    html += renderMarkerItem(marker, group.id);
+                });
+                html += `</div>`;
+            }
+            html += `</div>`;
+        }
     });
 
-    // Build HTML
-    let html = '';
-    sortedCategories.forEach(catKey => {
-        const catMarkers = grouped[catKey];
-        const catInfo = iconTypes[catKey] || {};
-        const catName = catInfo.name || catKey;
-        const catColor = catInfo.color || '#888';
-        const isCollapsed = adminCollapsedCategories.has(catKey);
-        const isHidden = adminHiddenCategories.has(catKey);
-        const count = catMarkers.length;
-
-        // Sort markers within group alphabetically
-        catMarkers.sort((a, b) => {
-            const nameA = getMarkerDisplayName(a);
-            const nameB = getMarkerDisplayName(b);
-            return nameA.localeCompare(nameB, 'zh-CN', { numeric: true });
+    // Render ungrouped
+    if (ungrouped.length > 0) {
+        const isCollapsed = adminCollapsedCategories.has('ungrouped');
+        const count = ungrouped.length;
+        
+        ungrouped.sort((a, b) => {
+            return getMarkerDisplayName(a).localeCompare(getMarkerDisplayName(b), 'zh-CN', { numeric: true });
         });
 
-        html += `<div class="admin-marker-group" data-category="${catKey}">`;
-        html += `<div class="admin-group-header${isHidden ? ' cat-hidden' : ''}" onclick="toggleAdminCategory('${catKey}')">`;
+        html += `<div class="admin-marker-group" data-category="ungrouped">`;
+        html += `<div class="admin-group-header" onclick="toggleAdminCategory('ungrouped')">`;
         html += `<div class="admin-group-left">`;
         html += `<span class="admin-collapse-icon${isCollapsed ? '' : ' expanded'}">${isCollapsed ? '▶' : '▼'}</span>`;
-        html += `<span class="admin-group-color" style="background: ${catColor}"></span>`;
-        html += `<span class="admin-group-icon">${getMarkerIcon(catKey)}</span>`;
-        html += `<span class="admin-group-title">${escapeHtml(catName)}</span>`;
+        html += `<span class="admin-group-color" style="background: #9e9e9e"></span>`;
+        html += `<span class="admin-group-icon">🏷️</span>`;
+        html += `<span class="admin-group-title">未分组</span>`;
         html += `<span class="admin-group-count">${count}</span>`;
         html += `</div>`;
-        html += `<button class="admin-visibility-btn${isHidden ? ' is-hidden' : ''}" onclick="event.stopPropagation(); toggleAdminCategoryVisibility('${catKey}')" title="${isHidden ? '显示该分组' : '隐藏该分组'}">`;
-        html += isHidden ? ADMIN_EYE_OFF_SVG : ADMIN_EYE_ON_SVG;
-        html += `</button>`;
         html += `</div>`;
 
         if (!isCollapsed) {
             html += `<div class="admin-group-items">`;
-            catMarkers.forEach(marker => {
-                const displayName = getMarkerDisplayName(marker);
-                const markerHidden = adminHiddenCategories.has(marker.category || 'other');
-                const markerLocked = isMarkerLocked(marker);
-                html += `
-                <div class="marker-item${selectedMarkerId === marker.id ? ' active' : ''}${markerHidden ? ' marker-cat-hidden' : ''}${markerLocked ? ' locked' : ''}"
-                     data-id="${marker.id}"
-                     tabindex="0"
-                     onclick="selectMarkerFromList('${marker.id}')"
-                     ondblclick="focusAdminMarker('${marker.id}')"
-                     onkeydown="handleMarkerListKeydown(event, '${marker.id}')">
-                  <div class="marker-item-header">
-                    <div class="marker-item-title">
-                      <span class="marker-item-icon">${getMarkerListIcon(marker)}</span>
-                      <span class="marker-item-name">${escapeHtml(displayName)}</span>
-                      ${markerLocked ? '<span class="marker-locked-badge" title="已锁定（防误触）">🔒</span>' : ''}
-                    </div>
-                    <div class="marker-item-actions">
-                      <button class="icon-btn${markerLocked ? ' lock-active' : ''}" onclick="event.stopPropagation(); toggleMarkerLock('${marker.id}')" title="${markerLocked ? '解锁标记' : '锁定标记（防误触）'}">${markerLocked ? '🔓' : '🔒'}</button>
-                      ${markerLocked ? '' : `
-                      <button class="icon-btn" onclick="event.stopPropagation(); copyMarker('${marker.id}')" title="复制">📋</button>
-                      <button class="icon-btn" onclick="event.stopPropagation(); editMarker('${marker.id}')" title="编辑">✏️</button>
-                      <button class="icon-btn delete" onclick="event.stopPropagation(); deleteMarker('${marker.id}')" title="删除">🗑️</button>`}
-                    </div>
-                  </div>
-                  ${marker.description ? `<div class="marker-item-info">${escapeHtml(marker.description)}</div>` : ''}
-                </div>`;
+            ungrouped.forEach(marker => {
+                html += renderMarkerItem(marker, null);
             });
             html += `</div>`;
         }
-
         html += `</div>`;
-    });
+    }
 
     markersList.innerHTML = html;
 }
@@ -1912,6 +1956,294 @@ function hideAllAdminCategories() {
     updateEditorMarkerVisibility();
 }
 window.hideAllAdminCategories = hideAllAdminCategories;
+
+// ============================================
+// Tag Groups Management  
+// ============================================
+
+async function loadTagGroups() {
+    try {
+        const response = await fetch('/api/tag-groups');
+        if (response.ok) {
+            tagGroupsData = await response.json();
+        }
+    } catch (error) {
+        console.error('Failed to load tag groups:', error);
+    }
+}
+
+function openTagGroupManager() {
+    let modal = document.getElementById('tagGroupManagerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'tagGroupManagerModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h2>📂 管理自定义分组</h2>
+                    <button class="close-btn" onclick="document.getElementById('tagGroupManagerModal').style.display='none'">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+                        <button class="btn btn-primary btn-sm" onclick="openTagGroupForm()">➕ 新建分组</button>
+                    </div>
+                    <div id="tagGroupManagerList"></div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    renderTagGroupManagerList();
+    modal.style.display = 'flex';
+}
+window.openTagGroupManager = openTagGroupManager;
+
+function renderTagGroupManagerList() {
+    const container = document.getElementById('tagGroupManagerList');
+    if (!container) return;
+    if (tagGroupsData.length === 0) {
+        container.innerHTML = '<div class="empty-preview"><p>暂无自定义分组，点击「新建分组」创建</p></div>';
+        return;
+    }
+    container.innerHTML = tagGroupsData.map(group => {
+        const count = (group.markerIds || []).length;
+        return `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 8px; background: white;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">${group.icon || '📦'}</span>
+                    <div>
+                        <div style="font-weight: 600; color: var(--text-primary);">${escapeHtml(group.name)}</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">${count} 个标签</div>
+                    </div>
+                    <span style="width: 12px; height: 12px; border-radius: 50%; background: ${group.color || '#4a90e2'}; display: inline-block;"></span>
+                </div>
+                <div style="display: flex; gap: 5px;">
+                    <button class="icon-btn" onclick="openTagGroupForm('${group.id}')" title="编辑">✏️</button>
+                    <button class="icon-btn delete" onclick="deleteTagGroup('${group.id}')" title="删除">🗑️</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openTagGroupForm(groupId = null) {
+    let modal = document.getElementById('tagGroupFormModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'tagGroupFormModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 420px;">
+                <div class="modal-header">
+                    <h2 id="tagGroupFormTitle">新建分组</h2>
+                    <button class="close-btn" onclick="document.getElementById('tagGroupFormModal').style.display='none'">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="tagGroupForm" onsubmit="saveTagGroup(event)">
+                        <input type="hidden" id="tagGroupId">
+                        <div class="form-group">
+                            <label for="tagGroupName">分组名称 *</label>
+                            <input type="text" id="tagGroupName" required placeholder="例如：3楼设备">
+                        </div>
+                        <div class="form-group">
+                            <label for="tagGroupIcon">图标</label>
+                            <input type="text" id="tagGroupIcon" placeholder="输入 emoji，如 📦" value="📦" style="font-size: 18px;">
+                        </div>
+                        <div class="form-group">
+                            <label for="tagGroupColor">颜色</label>
+                            <input type="color" id="tagGroupColor" value="#4a90e2">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="document.getElementById('tagGroupFormModal').style.display='none'">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    const form = document.getElementById('tagGroupForm');
+    form.reset();
+    document.getElementById('tagGroupId').value = groupId || '';
+    document.getElementById('tagGroupIcon').value = '📦';
+    document.getElementById('tagGroupColor').value = '#4a90e2';
+    if (groupId) {
+        document.getElementById('tagGroupFormTitle').textContent = '编辑分组';
+        const group = tagGroupsData.find(g => g.id === groupId);
+        if (group) {
+            document.getElementById('tagGroupName').value = group.name || '';
+            document.getElementById('tagGroupIcon').value = group.icon || '📦';
+            document.getElementById('tagGroupColor').value = group.color || '#4a90e2';
+        }
+    } else {
+        document.getElementById('tagGroupFormTitle').textContent = '新建分组';
+    }
+    modal.style.display = 'flex';
+}
+window.openTagGroupForm = openTagGroupForm;
+
+async function saveTagGroup(e) {
+    e.preventDefault();
+    const id = document.getElementById('tagGroupId').value;
+    const name = document.getElementById('tagGroupName').value.trim();
+    const icon = document.getElementById('tagGroupIcon').value.trim() || '📦';
+    const color = document.getElementById('tagGroupColor').value;
+    if (!name) { showToast('请输入分组名称', 'error'); return; }
+    try {
+        const url = id ? '/api/tag-groups/' + id : '/api/tag-groups';
+        const method = id ? 'PUT' : 'POST';
+        const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, icon, color }) });
+        if (response.ok) {
+            showToast(id ? '分组已更新' : '分组已创建', 'success');
+            document.getElementById('tagGroupFormModal').style.display = 'none';
+            await loadTagGroups();
+            renderTagGroupManagerList();
+            renderMarkersList();
+        } else { showToast('保存失败', 'error'); }
+    } catch (error) { showToast('保存失败', 'error'); }
+}
+window.saveTagGroup = saveTagGroup;
+
+async function deleteTagGroup(id) {
+    if (!confirm('确定要删除这个分组吗？标签本身不会被删除。')) return;
+    try {
+        const response = await fetch('/api/tag-groups/' + id, { method: 'DELETE' });
+        if (response.ok) {
+            showToast('分组已删除', 'success');
+            await loadTagGroups();
+            renderTagGroupManagerList();
+            renderMarkersList();
+        } else { showToast('删除失败', 'error'); }
+    } catch (error) { showToast('删除失败', 'error'); }
+}
+window.deleteTagGroup = deleteTagGroup;
+
+// ============================================
+// Multi-Select & Batch Group Assignment
+// ============================================
+
+function toggleSelectMode() {
+    adminSelectMode = !adminSelectMode;
+    adminSelectedMarkerIds.clear();
+    const btn = document.getElementById('selectModeBtn');
+    if (btn) {
+        btn.classList.toggle('active', adminSelectMode);
+        btn.textContent = adminSelectMode ? '✅ 退出多选' : '☑️ 多选';
+    }
+    const batchBar = document.getElementById('batchActionBar');
+    if (batchBar) batchBar.style.display = adminSelectMode ? 'flex' : 'none';
+    updateBatchBarCount();
+    renderMarkersList();
+}
+window.toggleSelectMode = toggleSelectMode;
+
+function toggleMarkerSelect(markerId, event) {
+    if (event) event.stopPropagation();
+    if (adminSelectedMarkerIds.has(markerId)) {
+        adminSelectedMarkerIds.delete(markerId);
+    } else {
+        adminSelectedMarkerIds.add(markerId);
+    }
+    const cb = document.querySelector(`.marker-select-cb[data-id="${markerId}"]`);
+    if (cb) cb.checked = adminSelectedMarkerIds.has(markerId);
+    const item = document.querySelector(`.marker-item[data-id="${markerId}"]`);
+    if (item) item.classList.toggle('selected', adminSelectedMarkerIds.has(markerId));
+    updateBatchBarCount();
+}
+window.toggleMarkerSelect = toggleMarkerSelect;
+
+function selectAllMarkersInView() {
+    document.querySelectorAll('.marker-item[data-id]').forEach(item => adminSelectedMarkerIds.add(item.dataset.id));
+    renderMarkersList();
+    updateBatchBarCount();
+}
+window.selectAllMarkersInView = selectAllMarkersInView;
+
+function deselectAllMarkers() {
+    adminSelectedMarkerIds.clear();
+    renderMarkersList();
+    updateBatchBarCount();
+}
+window.deselectAllMarkers = deselectAllMarkers;
+
+function updateBatchBarCount() {
+    const el = document.getElementById('batchSelectedCount');
+    if (el) el.textContent = adminSelectedMarkerIds.size;
+}
+
+function openBatchGroupAssign() {
+    if (adminSelectedMarkerIds.size === 0) { showToast('请先选择标签', 'error'); return; }
+    let modal = document.getElementById('batchGroupAssignModal');
+    if (!modal) { modal = document.createElement('div'); modal.id = 'batchGroupAssignModal'; modal.className = 'modal'; document.body.appendChild(modal); }
+    const groupOptions = tagGroupsData.map(g => `
+        <label style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 6px; cursor: pointer;">
+            <input type="checkbox" name="batchGroups" value="${g.id}" style="width: 18px; height: 18px;">
+            <span style="font-size: 18px;">${g.icon || '📦'}</span>
+            <span style="font-weight: 500;">${escapeHtml(g.name)}</span>
+            <span style="color: var(--text-secondary); font-size: 12px; margin-left: auto;">${(g.markerIds || []).length} 个标签</span>
+        </label>
+    `).join('');
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h2>📂 移入分组</h2>
+                <button class="close-btn" onclick="document.getElementById('batchGroupAssignModal').style.display='none'">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-secondary); margin-bottom: 12px;">已选择 <strong>${adminSelectedMarkerIds.size}</strong> 个标签，选择要加入的分组：</p>
+                ${tagGroupsData.length > 0 ? '<div id="batchGroupList">' + groupOptions + '</div>' : '<div class="empty-preview"><p>暂无分组，请先创建分组</p></div>'}
+                <div style="margin-top: 12px;"><button class="btn btn-sm btn-secondary" onclick="openTagGroupForm()">➕ 新建分组</button></div>
+                <div class="form-actions" style="margin-top: 16px;">
+                    <button class="btn btn-secondary" onclick="document.getElementById('batchGroupAssignModal').style.display='none'">取消</button>
+                    <button class="btn btn-primary" onclick="confirmBatchGroupAssign()">确认添加</button>
+                </div>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+}
+window.openBatchGroupAssign = openBatchGroupAssign;
+
+async function confirmBatchGroupAssign() {
+    const checkboxes = document.querySelectorAll('#batchGroupList input[name="batchGroups"]:checked');
+    const selectedGroupIds = Array.from(checkboxes).map(cb => cb.value);
+    if (selectedGroupIds.length === 0) { showToast('请至少选择一个分组', 'error'); return; }
+    const markerIdsToAdd = Array.from(adminSelectedMarkerIds);
+    try {
+        for (const groupId of selectedGroupIds) {
+            await fetch('/api/tag-groups/' + groupId + '/markers', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ add: markerIdsToAdd })
+            });
+        }
+        showToast(`已将 ${markerIdsToAdd.length} 个标签添加到 ${selectedGroupIds.length} 个分组`, 'success');
+        document.getElementById('batchGroupAssignModal').style.display = 'none';
+        adminSelectedMarkerIds.clear();
+        adminSelectMode = false;
+        const btn = document.getElementById('selectModeBtn');
+        if (btn) { btn.classList.remove('active'); btn.textContent = '☑️ 多选'; }
+        const batchBar = document.getElementById('batchActionBar');
+        if (batchBar) batchBar.style.display = 'none';
+        await loadTagGroups();
+        renderMarkersList();
+    } catch (error) { showToast('操作失败', 'error'); }
+}
+window.confirmBatchGroupAssign = confirmBatchGroupAssign;
+
+async function removeMarkerFromGroup(groupId, markerId) {
+    try {
+        await fetch('/api/tag-groups/' + groupId + '/markers', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ remove: [markerId] })
+        });
+        showToast('已从分组移除', 'success');
+        await loadTagGroups();
+        renderMarkersList();
+    } catch (error) { showToast('操作失败', 'error'); }
+}
+window.removeMarkerFromGroup = removeMarkerFromGroup;
 
 // Update editor marker visibility based on adminHiddenCategories
 function updateEditorMarkerVisibility() {
@@ -5257,6 +5589,11 @@ function renderViewsList() {
             return type ? type.name : c;
         }).join(', ');
 
+        const groups = (view.tagGroupIds || []).map(gId => {
+            const group = tagGroupsData.find(g => g.id === gId);
+            return group ? group.name : gId;
+        }).join(', ');
+
         const isMain = view.isMain === true;
         const mainBadge = isMain
             ? '<span style="display: inline-block; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; font-size: 12px; padding: 2px 8px; border-radius: 10px; margin-left: 8px; font-weight: 600;">★ 主视图</span>'
@@ -5275,6 +5612,7 @@ function renderViewsList() {
                     <p style="margin: 0; color: var(--text-secondary); font-size: 13px;">
                         <strong>显示分类:</strong> ${escapeHtml(cats) || '无'}
                     </p>
+                    ${groups ? `<p style="margin: 0; color: var(--text-secondary); font-size: 13px;"><strong>自定义分组:</strong> ${escapeHtml(groups)}</p>` : ''}
                 </div>
                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                     ${mainBtn}
@@ -5339,6 +5677,26 @@ function openViewForm(viewId = null) {
             `;
         }).join('');
 
+    let tgContainer = document.getElementById('viewTagGroupsContainer');
+    if (!tgContainer) {
+        tgContainer = document.createElement('div');
+        tgContainer.id = 'viewTagGroupsContainer';
+        tgContainer.style.marginTop = '15px';
+        container.parentNode.insertBefore(tgContainer, container.nextSibling);
+    }
+    
+    if (tagGroupsData.length > 0) {
+        tgContainer.innerHTML = '<h4 style="margin: 0 0 10px 0; font-size: 14px;">自定义分组</h4>' + tagGroupsData.map(group => `
+            <label style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 6px; cursor: pointer;">
+                <input type="checkbox" name="viewTagGroups" value="${group.id}" style="width: 16px; height: 16px;">
+                <span style="font-size: 16px;">${group.icon || '📦'}</span>
+                <span style="font-weight: 500;">${escapeHtml(group.name)}</span>
+            </label>
+        `).join('');
+    } else {
+        tgContainer.innerHTML = '<h4 style="margin: 0 0 10px 0; font-size: 14px;">自定义分组</h4><div style="color: var(--text-secondary); font-size: 13px;">无自定义分组</div>';
+    }
+
     if (viewId) {
         title.textContent = '编辑视图';
         const view = viewsData.find(v => v.id === viewId);
@@ -5352,6 +5710,12 @@ function openViewForm(viewId = null) {
                     if(cb.parentElement.classList.contains('icon-category-card')) {
                         cb.parentElement.classList.add('selected');
                     }
+                }
+            });
+            const tgCheckboxes = form.querySelectorAll('input[name="viewTagGroups"]');
+            tgCheckboxes.forEach(cb => {
+                if ((view.tagGroupIds || []).includes(cb.value)) {
+                    cb.checked = true;
                 }
             });
         }
@@ -5370,6 +5734,9 @@ async function saveView(e) {
     const checkboxes = document.querySelectorAll('input[name="viewCategories"]:checked');
     const categories = Array.from(checkboxes).map(cb => cb.value);
 
+    const tgCheckboxes = document.querySelectorAll('input[name="viewTagGroups"]:checked');
+    const tagGroupIds = Array.from(tgCheckboxes).map(cb => cb.value);
+
     // Validate route (letters, numbers, hyphens)
     if (!/^[a-zA-Z0-9-]+$/.test(route)) {
         showToast('路由格式无效，只能包含字母、数字和连字符', 'error');
@@ -5383,7 +5750,7 @@ async function saveView(e) {
         return;
     }
 
-    const data = { name, route, categories };
+    const data = { name, route, categories, tagGroupIds };
 
     try {
         const url = id ? '/api/views/' + id : '/api/views';
@@ -5430,6 +5797,7 @@ window.setMainView = setMainView;
 window.clearMainView = clearMainView;
 
 document.addEventListener('DOMContentLoaded', () => {
+    loadTagGroups();
     const addViewBtn = document.getElementById('add-view-btn');
     if (addViewBtn) addViewBtn.addEventListener('click', () => openViewForm());
 

@@ -351,15 +351,15 @@
     border-radius: 8px;
     position: relative;
     overflow: hidden;
-    cursor: grab;
+    cursor: var(--cursor-grab);
 }
 
 .editor-map-wrapper.grabbing {
-    cursor: grabbing;
+    cursor: var(--cursor-grabbing) !important;
 }
 
 .editor-map-wrapper.adding-marker {
-    cursor: crosshair;
+    cursor: var(--cursor-crosshair) !important;
 }
 
 .editor-map-wrapper.drawing-fill-marker {
@@ -2212,4 +2212,65 @@
 
 .admin-sidebar.collapsed .menu-item span:not(.menu-icon) {
     display: none;
+}
+
+/* Temp Marker */
+.temp-marker {
+    cursor: var(--cursor-move) !important;
+}
+
+/* Resize & Rotate handles */
+.resize-handle.nw { cursor: var(--cursor-nwse) !important; }
+.resize-handle.ne { cursor: var(--cursor-nesw) !important; }
+.resize-handle.sw { cursor: var(--cursor-nesw) !important; }
+.resize-handle.se { cursor: var(--cursor-nwse) !important; }
+.resize-handle.n  { cursor: var(--cursor-ns) !important; }
+.resize-handle.s  { cursor: var(--cursor-ns) !important; }
+.resize-handle.w  { cursor: var(--cursor-ew) !important; }
+.resize-handle.e  { cursor: var(--cursor-ew) !important; }
+.rotate-handle   { cursor: var(--cursor-crosshair) !important; }
+.marker.dragging { cursor: var(--cursor-move) !important; }
+
+/* Batch Action Bar & Multi-Select */
+.batch-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    gap: 8px;
+}
+
+.batch-action-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.batch-action-right {
+    display: flex;
+    gap: 6px;
+}
+
+.marker-item.selected {
+    background: #e8f0fe !important;
+    border-color: var(--primary-color) !important;
+}
+
+.markers-group-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.group-toolbar-right {
+    display: flex;
+    gap: 6px;
 }

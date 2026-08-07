@@ -293,6 +293,8 @@ function getIconTypes()   { return Object.assign({}, DEFAULT_ICON_TYPES, getKV('
 function setIconTypes(v)  { setKV('iconTypes', v); }
 function getViews()       { return getKV('views', []); }
 function setViews(v)      { setKV('views', v); }
+function getTagGroups()   { return getKV('tagGroups', []); }
+function setTagGroups(v)  { setKV('tagGroups', v); }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
@@ -314,6 +316,7 @@ module.exports = {
   getCategories, setCategories,
   getIconTypes, setIconTypes,
   getViews, setViews,
+  getTagGroups, setTagGroups,
   // Defaults
   DEFAULT_SETTINGS,
   DEFAULT_ICON_TYPES,

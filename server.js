@@ -400,6 +400,18 @@ app.get('/api/view/:route', (req, res) => {
       view = views.find(v => v.route === req.params.route);
     }
     if (view) {
+      // Resolve tagGroupIds to marker IDs for client-side union filter
+      if (view.tagGroupIds && view.tagGroupIds.length > 0) {
+        const tagGroups = db.getTagGroups();
+        const tagGroupMarkerIds = [];
+        view.tagGroupIds.forEach(gId => {
+          const group = tagGroups.find(g => g.id === gId);
+          if (group && group.markerIds) {
+            tagGroupMarkerIds.push(...group.markerIds);
+          }
+        });
+        view.tagGroupMarkerIds = [...new Set(tagGroupMarkerIds)];
+      }
       res.json(view);
     } else {
       res.status(404).json({ error: 'View not found' });
@@ -477,6 +489,87 @@ app.put('/api/views/:id/set-main', requireAuth, (req, res) => {
     res.json(views[index]);
   } catch (error) {
     res.status(500).json({ error: 'Failed to set main view' });
+  }
+});
+
+// ============================================
+// Tag Groups APIs
+// ============================================
+
+// Get all tag groups (public - used by admin & frontend sidebar)
+app.get('/api/tag-groups', (req, res) => {
+  try {
+    res.json(db.getTagGroups());
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load tag groups' });
+  }
+});
+
+// Create tag group (admin)
+app.post('/api/tag-groups', requireAuth, (req, res) => {
+  try {
+    const groups = db.getTagGroups();
+    const newGroup = {
+      id: Date.now().toString(),
+      name: req.body.name || 'New Group',
+      icon: req.body.icon || '📦',
+      color: req.body.color || '#4a90e2',
+      markerIds: [],
+      sortOrder: groups.length
+    };
+    groups.push(newGroup);
+    db.setTagGroups(groups);
+    res.json(newGroup);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create tag group' });
+  }
+});
+
+// Update tag group metadata (admin)
+app.put('/api/tag-groups/:id', requireAuth, (req, res) => {
+  try {
+    const groups = db.getTagGroups();
+    const index = groups.findIndex(g => g.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'Tag group not found' });
+    groups[index] = { ...groups[index], ...req.body, id: req.params.id };
+    db.setTagGroups(groups);
+    res.json(groups[index]);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update tag group' });
+  }
+});
+
+// Batch add/remove markers from a tag group (admin)
+app.put('/api/tag-groups/:id/markers', requireAuth, (req, res) => {
+  try {
+    const groups = db.getTagGroups();
+    const index = groups.findIndex(g => g.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'Tag group not found' });
+    const group = groups[index];
+    if (!group.markerIds) group.markerIds = [];
+    if (req.body.add) {
+      req.body.add.forEach(id => {
+        if (!group.markerIds.includes(id)) group.markerIds.push(id);
+      });
+    }
+    if (req.body.remove) {
+      group.markerIds = group.markerIds.filter(id => !req.body.remove.includes(id));
+    }
+    db.setTagGroups(groups);
+    res.json(group);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update tag group markers' });
+  }
+});
+
+// Delete tag group (admin)
+app.delete('/api/tag-groups/:id', requireAuth, (req, res) => {
+  try {
+    const groups = db.getTagGroups().filter(g => g.id !== req.params.id);
+    db.setTagGroups(groups);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete tag group' });
   }
 });
 

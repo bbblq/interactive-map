@@ -825,32 +825,31 @@ function updateCategoryVisuals() {
 // 关键: 文字标记可能没设 category, 但被 renderCategories() 归到 'other' 显示.
 // 这里用同一个 fallback ('其他' -> 'other') 跟 sidebar 状态对得上, 眼睛按钮才有效.
 function updateMarkerVisibility() {
+    const groupedMap = {};
+    tagGroupsData.forEach(g => {
+        const isHidden = hiddenCategories.has('grp_' + g.id);
+        (g.markerIds || []).forEach(id => {
+            if (!groupedMap[id]) groupedMap[id] = [];
+            groupedMap[id].push(isHidden);
+        });
+    });
+    
+    const isUngroupedHidden = hiddenCategories.has('grp_ungrouped');
+    
     markers.forEach(marker => {
         const markerEl = markersContainer.querySelector(`.marker[data-marker-id="${CSS.escape(marker.id)}"]`);
         if (!markerEl) return;
-        const cat = marker.category || 'other';
-        markerEl.classList.toggle('category-hidden', hiddenCategories.has(cat));
+        
+        let hidden = false;
+        if (groupedMap[marker.id]) {
+            hidden = groupedMap[marker.id].every(h => h === true);
+        } else {
+            hidden = isUngroupedHidden;
+        }
+        
+        markerEl.classList.toggle('category-hidden', hidden);
     });
 }
-
-// Toggle markers visibility
-window.toggleMarkers = function () {
-    showMarkers = !showMarkers;
-    renderMarkers();
-    return showMarkers;
-};
-
-// Focus marker - 带动画聚焦放大
-function focusMarker(markerId) {
-    const marker = markers.find(m => m.id === markerId);
-    if (!marker) return;
-
-    animateToMarker(marker, () => {
-        highlightMarker(marker.id);
-    });
-}
-
-
 
 // Setup event listeners
 function setupEventListeners() {
