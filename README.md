@@ -2,7 +2,7 @@
 
 一个基于 Node.js + Express 的通用互动地图系统，支持高精度标记编辑、矢量级缩放、分类筛选、富文本详情、一键导出 (PNG/JPG) 与 Docker 一键部署。适用于办公室地图、校园导览、展会布局等多种场景。
 
-**版本**: v1.7.2 | **Node.js**: ≥18.0.0 | **许可证**: MIT | **Docker Hub**: `bbblq/interactive-map`
+**版本**: v1.7.3 | **Node.js**: ≥18.0.0 | **许可证**: MIT | **Docker Hub**: `bbblq/interactive-map`
 
 ---
 

@@ -4166,6 +4166,9 @@ function applyMarkerTransform(marker, markerEl) {
         if (labelPart) {
             const fontPx = EDITOR_MARKER_FONT * (targetSize / EDITOR_MARKER_BASE);
             labelPart.style.fontSize = fontPx + 'px';
+            const hasIcon = !!iconPart;
+            labelPart.style.paddingLeft = (hasIcon ? 4 : 8) + 'px';
+            labelPart.style.paddingRight = '10px';
         }
         markerEl.style.transformOrigin = 'center center';
         markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${editorScale})`;

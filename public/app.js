@@ -522,7 +522,8 @@ function updateMarkerTransforms() {
             if (labelPart) {
                 const fontPx = MARKER_FONT_BASE * (targetSize / MARKER_BASE_SIZE);
                 labelPart.style.fontSize = fontPx + 'px';
-                labelPart.style.paddingLeft = '4px';
+                const hasIcon = !!iconPart;
+                labelPart.style.paddingLeft = (hasIcon ? 4 : 8) + 'px';
                 labelPart.style.paddingRight = '10px';
             }
             const capsule = markerEl.querySelector('.marker-capsule');
@@ -530,8 +531,8 @@ function updateMarkerTransforms() {
                 capsule.style.padding = '4px';
                 capsule.style.borderRadius = '30px';
             }
-            markerEl.style.transformOrigin = '50% 100%';
-            markerEl.style.transform = `translate(-50%, -100%) rotate(${rotation}deg) scale(${scale})`;
+            markerEl.style.transformOrigin = 'center center';
+            markerEl.style.transform = `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`;
         }
     }
 }
@@ -610,39 +611,49 @@ function renderMarkers() {
             const bgStyle = `background: ${bgColor};`;
             const textColor = isTransparent || bgColor === '#ffffff' || bgColor === '#fff' ? '#333' : '#333';
 
-            markerEl.innerHTML = `
-                <div class="marker-capsule" style="
-                    display: flex; 
-                    align-items: center; 
-                    ${bgStyle} 
-                    border-radius: 30px; 
-                    padding: 4px; 
-                    ${shadowStyle}
-                    transition: transform 0.2s;
-                    cursor: pointer;
-                    white-space: nowrap;
-                ">
-                    <div class="marker-icon-part" style="
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        flex-shrink: 0;
+            const showIcon = marker.showIcon !== false;
+            const showLabel = marker.showLabel !== false;
+
+            if (!showIcon && !showLabel && !marker.label) {
+                markerEl.innerHTML = `<div class="marker-icon"><div class="marker-icon-inner">📍</div></div>`;
+            } else {
+                markerEl.innerHTML = `
+                    <div class="marker-capsule" style="
+                        display: flex; 
+                        align-items: center; 
+                        ${bgStyle} 
+                        border-radius: 30px; 
+                        padding: 4px; 
+                        ${shadowStyle}
+                        transition: transform 0.2s;
+                        cursor: pointer;
+                        white-space: nowrap;
                     ">
-                        ${iconContent}
-                    </div>
-                    ${marker.showLabel !== false ? `
-                        <div class="marker-label-part" style="
-                            padding-left: 4px;
-                            padding-right: 10px;
-                            font-weight: 600;
-                            color: ${textColor};
-                            text-shadow: none;
+                        ${showIcon ? `
+                        <div class="marker-icon-part" style="
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            pointer-events: none;
+                            user-select: none;
+                            flex-shrink: 0;
                         ">
-                            ${escapeHtml(marker.label)}
-                        </div>
-                    ` : ''}
-                </div>
-            `;
+                            ${iconContent}
+                        </div>` : ''}
+                        ${showLabel && marker.label ? `
+                            <div class="marker-label-part" style="
+                                padding-left: ${showIcon ? '4px' : '8px'};
+                                padding-right: 10px;
+                                font-weight: 600;
+                                color: ${textColor};
+                                text-shadow: none;
+                            ">
+                                ${escapeHtml(marker.label)}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
         }
 
         markerEl.dataset.markerId = marker.id;
@@ -1451,10 +1462,11 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     const markerScale = marker.scale || 1.0;
     const type = iconTypes[marker.category] || iconTypes.other || {};
     const baseUnit = markerScale * sizeMul;
-    const iconSize = MARKER_BASE_SIZE * baseUnit;
+    const showIcon = marker.showIcon !== false;
+    const hasLabel = marker.showLabel !== false && !!marker.label;
+    const iconSize = showIcon ? MARKER_BASE_SIZE * baseUnit : 0;
     const fontSize = Math.max(6, MARKER_FONT_BASE * baseUnit);
     const padding = 4 * baseUnit;
-    const hasLabel = marker.showLabel !== false && marker.label;
     const bgColor = type.bgColor || '#f8f9fa';
     const isTransparent = bgColor === 'transparent';
     const iconColor = (type && type.color) ? type.color : '#9e9e9e';
@@ -1464,14 +1476,16 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     doc.setFontSize(fontSize);
     const labelText = marker.label || '';
     const labelWidth = hasLabel ? doc.getTextWidth(labelText) : 0;
-    const labelPadLeft = hasLabel ? 4 * baseUnit : 0;
+    const labelPadLeft = hasLabel ? (showIcon ? 4 * baseUnit : 8 * baseUnit) : 0;
     const labelPadRight = hasLabel ? 10 * baseUnit : 0;
 
-    const capsuleW = padding + iconSize + (hasLabel ? labelPadLeft + labelWidth + labelPadRight : padding);
-    const capsuleH = iconSize + 2 * padding;
+    const capsuleW = showIcon
+        ? padding + iconSize + (hasLabel ? labelPadLeft + labelWidth + labelPadRight : padding)
+        : (hasLabel ? labelPadLeft + labelWidth + labelPadRight : padding * 2);
+    const capsuleH = (showIcon ? iconSize : fontSize) + 2 * padding;
     const borderRadius = Math.min(capsuleH / 2, 30 * baseUnit);
     const capsuleX = mx - capsuleW / 2;
-    const capsuleY = my - capsuleH;
+    const capsuleY = my - capsuleH / 2;
 
     const rotation = marker.rotation || 0;
     if (rotation !== 0) {
@@ -1480,7 +1494,7 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
         const cx = mx;
-        const cy = my - capsuleH / 2;
+        const cy = my;
         const cy_pdf = pdfH - cy;
         const m = doc.Matrix(cos, -sin, sin, cos, cx - cx * cos - cy_pdf * sin, cy_pdf + cx * sin - cy_pdf * cos);
         doc.setCurrentTransformationMatrix(m);
@@ -1498,24 +1512,26 @@ async function drawIconMarkerPdf(doc, marker, mx, my, sizeMul, pdfH) {
     }
 
     const iconX = capsuleX + padding;
-    const iconY = capsuleY + padding;
+    const iconY = capsuleY + (capsuleH - iconSize) / 2;
 
-    if (type.imageUrl) {
-        try {
-            const img = await loadImageAsync(type.imageUrl);
-            doc.addImage(img, 'PNG', iconX, iconY, iconSize, iconSize);
-        } catch (e) { console.warn('PDF: 自定义图标加载失败:', type.imageUrl); }
-    } else {
-        const svgKey = (type && type.icon) ? type.icon : 'other';
-        const svgStr = SVG_ICONS[svgKey] || SVG_ICONS.other;
-        if (svgStr) await drawSvgToPdf(doc, svgStr, iconX, iconY, iconSize, iconSize, iconColor);
+    if (showIcon) {
+        if (type.imageUrl) {
+            try {
+                const img = await loadImageAsync(type.imageUrl);
+                doc.addImage(img, 'PNG', iconX, iconY, iconSize, iconSize);
+            } catch (e) { console.warn('PDF: 自定义图标加载失败:', type.imageUrl); }
+        } else {
+            const svgKey = (type && type.icon) ? type.icon : 'other';
+            const svgStr = SVG_ICONS[svgKey] || SVG_ICONS.other;
+            if (svgStr) await drawSvgToPdf(doc, svgStr, iconX, iconY, iconSize, iconSize, iconColor);
+        }
     }
 
     if (hasLabel) {
         ensurePdfFont(doc);
         doc.setFontSize(fontSize);
         applyPdfColor(doc, textColor, 'text');
-        const textX = iconX + iconSize + labelPadLeft;
+        const textX = showIcon ? (iconX + iconSize + labelPadLeft) : (capsuleX + labelPadLeft);
         const textY = capsuleY + capsuleH / 2;
         doc.text(labelText, textX, textY, { baseline: 'middle' });
         doc.setGState(new doc.GState({opacity: 1}));
