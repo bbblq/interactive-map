@@ -1854,6 +1854,7 @@ function renderMarkersList() {
             .filter(Boolean);
             
         if (groupMarkers.length > 0) {
+            const isHidden = adminHiddenCategories.has('tg_' + group.id);
             const isCollapsed = adminCollapsedCategories.has('tg_' + group.id);
             const count = groupMarkers.length;
             
@@ -1862,7 +1863,7 @@ function renderMarkersList() {
             });
 
             html += `<div class="admin-marker-group" data-category="tg_${group.id}">`;
-            html += `<div class="admin-group-header" onclick="toggleAdminCategory('tg_${group.id}')">`;
+            html += `<div class="admin-group-header${isHidden ? ' cat-hidden' : ''}" onclick="toggleAdminCategory('tg_${group.id}')">`;
             html += `<div class="admin-group-left">`;
             html += `<span class="admin-collapse-icon${isCollapsed ? '' : ' expanded'}">${isCollapsed ? '▶' : '▼'}</span>`;
             html += `<span class="admin-group-color" style="background: ${group.color || '#4a90e2'}"></span>`;
@@ -1870,6 +1871,9 @@ function renderMarkersList() {
             html += `<span class="admin-group-title">${escapeHtml(group.name)}</span>`;
             html += `<span class="admin-group-count">${count}</span>`;
             html += `</div>`;
+            html += `<button class="admin-visibility-btn${isHidden ? ' is-hidden' : ''}" onclick="event.stopPropagation(); toggleAdminCategoryVisibility('tg_${group.id}')" title="${isHidden ? '显示分组' : '隐藏分组'}">`;
+            html += isHidden ? ADMIN_EYE_OFF_SVG : ADMIN_EYE_ON_SVG;
+            html += `</button>`;
             html += `</div>`;
 
             if (!isCollapsed) {
@@ -1885,6 +1889,7 @@ function renderMarkersList() {
 
     // Render ungrouped
     if (ungrouped.length > 0) {
+        const isHidden = adminHiddenCategories.has('ungrouped');
         const isCollapsed = adminCollapsedCategories.has('ungrouped');
         const count = ungrouped.length;
         
@@ -1893,7 +1898,7 @@ function renderMarkersList() {
         });
 
         html += `<div class="admin-marker-group" data-category="ungrouped">`;
-        html += `<div class="admin-group-header" onclick="toggleAdminCategory('ungrouped')">`;
+        html += `<div class="admin-group-header${isHidden ? ' cat-hidden' : ''}" onclick="toggleAdminCategory('ungrouped')">`;
         html += `<div class="admin-group-left">`;
         html += `<span class="admin-collapse-icon${isCollapsed ? '' : ' expanded'}">${isCollapsed ? '▶' : '▼'}</span>`;
         html += `<span class="admin-group-color" style="background: #9e9e9e"></span>`;
@@ -1901,6 +1906,9 @@ function renderMarkersList() {
         html += `<span class="admin-group-title">未分组</span>`;
         html += `<span class="admin-group-count">${count}</span>`;
         html += `</div>`;
+        html += `<button class="admin-visibility-btn${isHidden ? ' is-hidden' : ''}" onclick="event.stopPropagation(); toggleAdminCategoryVisibility('ungrouped')" title="${isHidden ? '显示分组' : '隐藏分组'}">`;
+        html += isHidden ? ADMIN_EYE_OFF_SVG : ADMIN_EYE_ON_SVG;
+        html += `</button>`;
         html += `</div>`;
 
         if (!isCollapsed) {
@@ -1949,6 +1957,8 @@ window.showAllAdminCategories = showAllAdminCategories;
 
 // Hide all categories in admin
 function hideAllAdminCategories() {
+    tagGroupsData.forEach(g => adminHiddenCategories.add('tg_' + g.id));
+    adminHiddenCategories.add('ungrouped');
     markers.forEach(m => {
         adminHiddenCategories.add(m.category || 'other');
     });
@@ -2245,15 +2255,40 @@ async function removeMarkerFromGroup(groupId, markerId) {
 }
 window.removeMarkerFromGroup = removeMarkerFromGroup;
 
-// Update editor marker visibility based on adminHiddenCategories
+// Update editor marker visibility based on adminHiddenCategories (tag groups + ungrouped + category fallback)
 function updateEditorMarkerVisibility() {
     const markerEls = editorMarkersContainer.querySelectorAll('.marker');
+    
+    // 构建标记所在分组的隐藏状态映射
+    const groupedMap = {};
+    tagGroupsData.forEach(g => {
+        const isHidden = adminHiddenCategories.has('tg_' + g.id);
+        (g.markerIds || []).forEach(id => {
+            if (!groupedMap[id]) groupedMap[id] = [];
+            groupedMap[id].push(isHidden);
+        });
+    });
+    const isUngroupedHidden = adminHiddenCategories.has('ungrouped');
+
     markerEls.forEach(el => {
         const markerId = el.dataset.id;
         const marker = markers.find(m => m.id === markerId);
         if (marker) {
+            let hidden = false;
+            if (groupedMap[marker.id] && groupedMap[marker.id].length > 0) {
+                // 如果标记在一个或多个自定义分组中，所有所在分组都隐藏时才隐藏
+                hidden = groupedMap[marker.id].every(h => h === true);
+            } else {
+                // 未分组标记，受未分组状态控制
+                hidden = isUngroupedHidden;
+            }
+            // 同时兼容旧的分类隐藏状态
             const cat = marker.category || 'other';
             if (adminHiddenCategories.has(cat)) {
+                hidden = true;
+            }
+
+            if (hidden) {
                 el.style.opacity = '0';
                 el.style.pointerEvents = 'none';
             } else {

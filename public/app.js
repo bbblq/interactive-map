@@ -172,15 +172,29 @@ function buildFillMarkerSvg(marker) {
 let iconTypes = {};
 let currentView = null; // Global view state for Multi-View feature
 
+let tagGroupsData = []; // Custom tag groups
+
 // Initialize
 async function init() {
     await loadViewConfig();
     await loadSettings();
     await loadIconTypes();
+    await loadTagGroups();
     await loadMap();
     await loadMarkers();
     setupEventListeners();
     renderCategories(); // Call after all data is loaded
+}
+
+async function loadTagGroups() {
+    try {
+        const response = await fetch('/api/tag-groups');
+        if (response.ok) {
+            tagGroupsData = await response.json();
+        }
+    } catch (e) {
+        console.error('Failed to load tag groups:', e);
+    }
 }
 
 async function loadViewConfig() {
@@ -686,86 +700,119 @@ function renderMarkers() {
 const EYE_ON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
-// Render categories
+// Render categories (grouped by custom Tag Groups with Ungrouped fallback)
 function renderCategories() {
-    const categoryCounts = {};
-    if (Object.keys(iconTypes).length === 0) return;
+    if (!categoriesContainer) return;
 
-    // Count markers
-    markers.forEach(m => {
-        const cat = m.category || 'other';
-        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    // Build grouped markers
+    const groupedMarkerIds = new Set();
+    tagGroupsData.forEach(g => {
+        (g.markerIds || []).forEach(id => groupedMarkerIds.add(id));
     });
 
-    // Filter categories: only show those with markers AND showInSidebar = true
-    const categoriesWithMarkers = Object.entries(iconTypes)
-        .filter(([key, cat]) => {
-            const hasMarkers = (categoryCounts[key] || 0) > 0;
-            const showInSidebar = cat.showInSidebar !== false; // Default to true if not specified
-            return hasMarkers && showInSidebar;
-        })
-        // Sort by order field
-        .sort((a, b) => {
-            const orderA = a[1].order || 999;
-            const orderB = b[1].order || 999;
-            return orderA - orderB;
-        });
+    const ungroupedMarkers = markers.filter(m => !groupedMarkerIds.has(m.id));
 
-    categoriesContainer.innerHTML = categoriesWithMarkers.map(([key, cat]) => {
-        const count = categoryCounts[key] || 0;
+    function getMarkerName(m) {
+        if (m.type === 'text') return m.content || m.label || '(未命名文字)';
+        if (m.type === 'shape') {
+            const shapeNames = { rect: '矩形', circle: '圆形', arrow: '箭头' };
+            return m.label || `(${shapeNames[m.shape] || '形状'})`;
+        }
+        return m.label || '(未命名)';
+    }
+
+    let html = '';
+
+    // Render defined tag groups
+    tagGroupsData.forEach(group => {
+        const groupMarkers = (group.markerIds || [])
+            .map(id => markers.find(m => m.id === id))
+            .filter(Boolean);
+
+        if (groupMarkers.length > 0) {
+            const key = 'grp_' + group.id;
+            const count = groupMarkers.length;
+            const isHidden = hiddenCategories.has(key);
+            const isExpanded = expandedCategories.has(key);
+
+            groupMarkers.sort((a, b) => {
+                const nameA = getMarkerName(a).toLowerCase();
+                const nameB = getMarkerName(b).toLowerCase();
+                return nameA.localeCompare(nameB, 'zh-CN', { numeric: true });
+            });
+
+            html += `
+            <div class="category">
+              <div class="category-header ${isHidden ? 'cat-hidden' : ''}" data-category="${key}">
+                <div class="category-left" onclick="toggleCategoryExpand('${key}')">
+                  <span class="category-expand-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
+                  <span class="category-icon-wrapper">
+                    <span class="category-icon" style="display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer;">${group.icon || '📦'}</span>
+                    <span class="category-badge">${count}</span>
+                  </span>
+                  <span class="category-name" style="cursor: pointer;">${escapeHtml(group.name)}</span>
+                  <span class="category-count-text">${count}</span>
+                </div>
+                <button class="category-visibility-btn" onclick="event.stopPropagation(); toggleCategoryVisibility('${key}')" title="${isHidden ? '显示分组' : '隐藏分组'}">
+                  ${isHidden ? EYE_OFF_SVG : EYE_ON_SVG}
+                </button>
+              </div>
+              <div class="category-items ${isExpanded ? 'expanded' : ''}" id="category-${key}">
+                ${groupMarkers.map(m => `
+                  <div class="category-item" onclick="focusMarker('${m.id}')">
+                    ${escapeHtml(getMarkerName(m))}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            `;
+        }
+    });
+
+    // Render ungrouped section
+    if (ungroupedMarkers.length > 0) {
+        const key = 'grp_ungrouped';
+        const count = ungroupedMarkers.length;
         const isHidden = hiddenCategories.has(key);
         const isExpanded = expandedCategories.has(key);
-        let iconHtml;
-        if (cat.imageUrl) {
-            iconHtml = `<img src="${cat.imageUrl}" style="width: 20px; height: 20px; object-fit: contain;">`;
-        } else {
-            const svg = SVG_ICONS[cat.icon] || SVG_ICONS.other;
-            iconHtml = `<div style="width: 20px; height: 20px; color: ${cat.color};">${svg}</div>`;
-        }
 
-        return `
+        ungroupedMarkers.sort((a, b) => {
+            const nameA = getMarkerName(a).toLowerCase();
+            const nameB = getMarkerName(b).toLowerCase();
+            return nameA.localeCompare(nameB, 'zh-CN', { numeric: true });
+        });
+
+        html += `
         <div class="category">
           <div class="category-header ${isHidden ? 'cat-hidden' : ''}" data-category="${key}">
             <div class="category-left" onclick="toggleCategoryExpand('${key}')">
               <span class="category-expand-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
               <span class="category-icon-wrapper">
-                <span class="category-icon" style="display: flex; align-items: center; justify-content: center; cursor: pointer;">${iconHtml}</span>
+                <span class="category-icon" style="display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer;">🏷️</span>
                 <span class="category-badge">${count}</span>
               </span>
-              <span class="category-name" style="cursor: pointer;">${cat.name}</span>
+              <span class="category-name" style="cursor: pointer;">未分组</span>
               <span class="category-count-text">${count}</span>
             </div>
-            <button class="category-visibility-btn" onclick="event.stopPropagation(); toggleCategoryVisibility('${key}')" title="${isHidden ? '显示分类' : '隐藏分类'}">
+            <button class="category-visibility-btn" onclick="event.stopPropagation(); toggleCategoryVisibility('${key}')" title="${isHidden ? '显示分组' : '隐藏分组'}">
               ${isHidden ? EYE_OFF_SVG : EYE_ON_SVG}
             </button>
           </div>
           <div class="category-items ${isExpanded ? 'expanded' : ''}" id="category-${key}">
-            ${markers.filter(m => (m.category || 'other') === key).sort((a, b) => {
-                const nameA = (a.label || a.content || '').toLowerCase();
-                const nameB = (b.label || b.content || '').toLowerCase();
-                return nameA.localeCompare(nameB, 'zh-CN', { numeric: true });
-            }).map(m => {
-                let displayName = m.label;
-                if (m.type === 'text') {
-                    displayName = m.content || m.label || '(未命名文字)';
-                } else if (m.type === 'shape') {
-                    const shapeNames = { rect: '矩形', circle: '圆形', arrow: '箭头' };
-                    displayName = m.label || `(${shapeNames[m.shape] || '形状'})`;
-                } else {
-                    displayName = m.label || '(未命名)';
-                }
-                return `
+            ${ungroupedMarkers.map(m => `
               <div class="category-item" onclick="focusMarker('${m.id}')">
-                ${escapeHtml(displayName)}
+                ${escapeHtml(getMarkerName(m))}
               </div>
-            `}).join('')}
+            `).join('')}
           </div>
         </div>
-      `;
-    }).join('');
+        `;
+    }
+
+    categoriesContainer.innerHTML = html;
 }
 
-// Toggle category visibility (show/hide markers of this category)
+// Toggle category visibility (show/hide markers of this category/group)
 function toggleCategoryVisibility(category) {
     if (hiddenCategories.has(category)) {
         hiddenCategories.delete(category);
@@ -796,6 +843,8 @@ function showAllCategories() {
 window.showAllCategories = showAllCategories;
 
 function hideAllCategories() {
+    tagGroupsData.forEach(g => hiddenCategories.add('grp_' + g.id));
+    hiddenCategories.add('grp_ungrouped');
     Object.keys(iconTypes).forEach(key => hiddenCategories.add(key));
     updateCategoryVisuals();
     updateMarkerVisibility();
@@ -827,14 +876,12 @@ function updateCategoryVisuals() {
         const eyeBtn = header.querySelector('.category-visibility-btn');
         if (eyeBtn) {
             eyeBtn.innerHTML = isHidden ? EYE_OFF_SVG : EYE_ON_SVG;
-            eyeBtn.title = isHidden ? '显示分类' : '隐藏分类';
+            eyeBtn.title = isHidden ? '显示分组' : '隐藏分组';
         }
     });
 }
 
 // Update marker visibility without full re-render (just toggle class)
-// 关键: 文字标记可能没设 category, 但被 renderCategories() 归到 'other' 显示.
-// 这里用同一个 fallback ('其他' -> 'other') 跟 sidebar 状态对得上, 眼睛按钮才有效.
 function updateMarkerVisibility() {
     const groupedMap = {};
     tagGroupsData.forEach(g => {
@@ -852,10 +899,16 @@ function updateMarkerVisibility() {
         if (!markerEl) return;
         
         let hidden = false;
-        if (groupedMap[marker.id]) {
+        if (groupedMap[marker.id] && groupedMap[marker.id].length > 0) {
             hidden = groupedMap[marker.id].every(h => h === true);
         } else {
             hidden = isUngroupedHidden;
+        }
+        
+        // Also check if legacy category hidden
+        const cat = marker.category || 'other';
+        if (hiddenCategories.has(cat)) {
+            hidden = true;
         }
         
         markerEl.classList.toggle('category-hidden', hidden);
